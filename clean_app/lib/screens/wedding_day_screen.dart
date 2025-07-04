@@ -1,0 +1,100 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../widgets/custom_page_title.dart';
+
+class WeddingDayScreen extends StatefulWidget {
+  const WeddingDayScreen({super.key});
+
+  @override
+  State<WeddingDayScreen> createState() => _WeddingDayScreenState();
+}
+
+class _WeddingDayScreenState extends State<WeddingDayScreen> {
+  DateTime? weddingDate;
+  Duration remaining = Duration();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWeddingDate();
+  }
+
+  Future<void> _loadWeddingDate() async {
+    // لا يوجد تحميل تلقائي لتاريخ الزفاف بعد حذف التخزين المحلي.
+    // إذا كنت بحاجة للوظيفة استخدم Firestore أو flutter_secure_storage.
+    setState(() {
+      if (weddingDate != null) {
+        remaining = weddingDate!.difference(DateTime.now());
+      }
+    });
+  }
+
+  Future<void> _pickWeddingDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now,
+      lastDate: DateTime(now.year + 5),
+      locale: const Locale('ar', ''),
+    );
+    if (picked != null) {
+      // تم حذف SharedPreferences نهائياً. إذا كنت بحاجة لتخزين بيانات استخدم flutter_secure_storage أو Firestore.
+      // تم حذف تخزين تاريخ الزفاف محلياً. إذا كنت بحاجة للوظيفة استخدم Firestore أو flutter_secure_storage.
+      setState(() {
+        weddingDate = picked;
+        remaining = weddingDate!.difference(DateTime.now());
+      });
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    if (d.isNegative) return 'تم الزفاف!';
+    final days = d.inDays;
+    final hours = d.inHours % 24;
+    return '$days يوم $hours ساعة';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color.fromARGB(255, 216, 208, 208),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            CustomPageTitle('يوم الزفاف'),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(height: 24),
+                    if (weddingDate == null)
+                      ElevatedButton.icon(
+                        icon: Icon(Icons.date_range),
+                        label: Text('اختيار يوم الزفاف'),
+                        onPressed: _pickWeddingDate,
+                      )
+                    else ...[
+                      Text('${weddingDate!.toLocal()}'.split(' ')[0], style: TextStyle(fontSize: 22)),
+                      SizedBox(height: 16),
+                      Text('الوقت المتبقي:', style: TextStyle(fontSize: 18)),
+                      Text(_formatDuration(remaining), style: TextStyle(fontSize: 32, color: Color(0xFFB46A6A), fontWeight: FontWeight.bold)),
+                      SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        icon: Icon(Icons.refresh),
+                        label: Text('تغيير اليوم'),
+                        onPressed: _pickWeddingDate,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
