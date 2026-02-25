@@ -124,7 +124,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    'لا_توجد_مفضلات_بعد',
+                    'لا توجد مفضلات بعد',
                     style: TextStyle(
                       fontSize: 20,
                       color: Colors.grey.shade600,
@@ -133,7 +133,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'ابدأ_بإضافة_خدماتك_المفضلة',
+                    'ابدأ بإضافة خدماتك المفضلة',
                     style: TextStyle(fontSize: 15, color: Colors.grey.shade500),
                   ),
                 ],

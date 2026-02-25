@@ -32,7 +32,7 @@ class _FazaaScreenState extends State<FazaaScreen> {
                       ),
                       SizedBox(height: 32),
                       Text(
-                        'عروض_جاهزة_للأعراس',
+                        'عروض جاهزة للأعراس',
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
@@ -42,7 +42,7 @@ class _FazaaScreenState extends State<FazaaScreen> {
                       ),
                       SizedBox(height: 16),
                       Text(
-                        'احصل_على_باقات_متكاملة_تشمل',
+                        'احصل على باقات متكاملة تشمل',
                         style: TextStyle(
                           fontSize: 18,
                           color: Colors.grey[600],
@@ -72,7 +72,7 @@ class _FazaaScreenState extends State<FazaaScreen> {
                             SizedBox(width: 16),
                             Expanded(
                               child: Text(
-                                'العروض_قيد_التحضير_وستتوفر_قريباً',
+                                'العروض قيد التحضير وستتوفر قريباً',
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: const Color(0xFF2D3748),

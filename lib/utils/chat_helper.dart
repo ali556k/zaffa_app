@@ -22,6 +22,17 @@ class ChatHelper {
       final currentUserId =
           prefs.getString('currentUserId') ?? prefs.getString('user_phone');
 
+      // التحقق مما إذا كان المستخدم ضيفاً
+      if (currentUserId == 'guest') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('المحادثات غير متاحة للضيوف. يرجى إنشاء حساب أولاً'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       if (currentUserId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('يرجى تسجيل الدخول أولاً')),

@@ -37,6 +37,17 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
 
       if (phone != null && phone.isNotEmpty) {
+        // السماح بدخول الضيف مباشرة
+        if (phone == 'guest') {
+          print('👤 ضيف يدخل التطبيق بنجاح');
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const MainNavigationScreen(),
+            ),
+          );
+          return;
+        }
+
         // التحقق من وجود المستخدم في قاعدة البيانات أولاً
         final userDoc = await FirebaseFirestore.instance
             .collection('users')

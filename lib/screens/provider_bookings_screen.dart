@@ -339,7 +339,7 @@ class ProviderBookingsScreen extends StatelessWidget {
       body: FutureBuilder<SharedPreferences>(
         future: SharedPreferences.getInstance(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(
               child: SizedBox(
                 width: 30,
@@ -347,6 +347,7 @@ class ProviderBookingsScreen extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             );
+          }
           final prefs = snapshot.data!;
           final currentUserPhone = prefs.getString('user_phone') ?? '';
 

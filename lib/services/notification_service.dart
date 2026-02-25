@@ -67,17 +67,15 @@ class NotificationService {
   Future<void> _saveDeviceToken() async {
     try {
       String? token = await _fcm.getToken();
-      if (token != null) {
-        final prefs = await SharedPreferences.getInstance();
-        final userPhone = prefs.getString('user_phone');
+      final prefs = await SharedPreferences.getInstance();
+      final userPhone = prefs.getString('user_phone');
 
-        if (userPhone != null) {
-          await FirebaseFirestore.instance
-              .collection('users')
-              .doc(userPhone)
-              .update({'fcmToken': token});
-          print('تم حفظ توكن الجهاز: $token');
-        }
+      if (userPhone != null) {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userPhone)
+            .update({'fcmToken': token});
+        print('تم حفظ توكن الجهاز: $token');
       }
     } catch (e) {
       print('خطأ في حفظ توكن الجهاز: $e');

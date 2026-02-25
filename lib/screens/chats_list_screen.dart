@@ -37,7 +37,7 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
 
       // إذا كان المستخدم هو المالك، استخدم رقم المالك مباشرة
       const String ownerPhone = '07721874360';
-      if (userId == ownerPhone || userId == null) {
+      if (userId == ownerPhone) {
         // تحقق إذا كان هذا هو المالك من خلال رقم الهاتف المحفوظ
         final savedPhone = prefs.getString('user_phone');
         if (savedPhone == ownerPhone) {
@@ -52,11 +52,6 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
         setState(() {
           _currentUserId = userId;
         });
-
-        // إذا لم يتم العثور على معرف، اعرض رسالة
-        if (userId == null) {
-          print('⚠️ لم يتم العثور على معرف المستخدم في SharedPreferences');
-        }
       }
     } catch (e) {
       print('❌ خطأ في تحميل معرف المستخدم: $e');
@@ -70,6 +65,67 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // التحقق مما إذا كان المستخدم ضيفاً
+    if (_currentUserId == 'guest') {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+          foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
+          centerTitle: true,
+          title: const Text(
+            'المحادثات',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.red.shade200, width: 2),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.lock_outline,
+                      size: 64,
+                      color: Colors.red.shade400,
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'المحادثات غير متاحة للضيوف',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.red,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'يرجى إنشاء حساب لتتمكن من التواصل مع مزودي الخدمات والدعم الفني',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(

@@ -67,10 +67,11 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
         _error = 'تعذر بدء التحقق: $e';
       });
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isSending = false;
         });
+      }
     }
   }
 
@@ -105,10 +106,11 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
         _error = 'فشل تسجيل الدخول: $e';
       });
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isVerifying = false;
         });
+      }
     }
   }
 

@@ -14,7 +14,7 @@ class WelcomeScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Image.asset('assets/app_icon.png', width: 120, height: 120),
+              Image.asset('assets/NOTIFICATION.png', width: 120, height: 120),
               const SizedBox(height: 32),
               Text(
                 'مرحباً بك في زفـة!',

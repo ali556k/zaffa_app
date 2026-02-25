@@ -460,10 +460,10 @@ class _ProviderItemsRegistrationScreenState
         serviceImageUrlFromPublished = publishedData?['serviceImageUrl'];
 
         // تجاهل القيم الفارغة
-        if (serviceImageFromPublished?.isEmpty ?? true) {
+        if ((serviceImageFromPublished?.isEmpty ?? true)) {
           serviceImageFromPublished = null;
         }
-        if (serviceImageUrlFromPublished?.isEmpty ?? true) {
+        if ((serviceImageUrlFromPublished?.isEmpty ?? true)) {
           serviceImageUrlFromPublished = null;
         }
 

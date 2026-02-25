@@ -355,8 +355,9 @@ class _ProviderStatisticsScreenState extends State<ProviderStatisticsScreen> {
                     sideTitles: SideTitles(
                       showTitles: true,
                       getTitlesWidget: (value, meta) {
-                        if (value.toInt() >= sortedEntries.length)
+                        if (value.toInt() >= sortedEntries.length) {
                           return const Text('');
+                        }
                         final monthKey = sortedEntries[value.toInt()].key;
                         final date = DateTime.parse('$monthKey-01');
                         return Padding(

@@ -687,21 +687,6 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
               .doc(cid)
               .get();
           data = usersDoc.data();
-          if (data == null) {
-            final q = await FirebaseFirestore.instance
-                .collection('users')
-                .where('phone', isEqualTo: cid)
-                .limit(1)
-                .get();
-            if (q.docs.isNotEmpty) data = q.docs.first.data();
-          }
-          if (data == null) {
-            final customersDoc = await FirebaseFirestore.instance
-                .collection('customers')
-                .doc(cid)
-                .get();
-            data = customersDoc.data();
-          }
         }
 
         if (data != null) {
@@ -2605,45 +2590,23 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
           .doc(cid)
           .get();
       Map<String, dynamic>? data = usersDoc.data();
-      if (data == null) {
-        // محاولة البحث بالهاتف إذا كان المعرّف ليس رقم
-        final q = await FirebaseFirestore.instance
-            .collection('users')
-            .where('phone', isEqualTo: cid)
-            .limit(1)
-            .get();
-        if (q.docs.isNotEmpty) {
-          data = q.docs.first.data();
-        }
-      }
 
-      // إن لم توجد بيانات في users، جرّب customers
-      if (data == null) {
-        final customersDoc = await FirebaseFirestore.instance
-            .collection('customers')
-            .doc(cid)
-            .get();
-        data = customersDoc.data();
-      }
+      booking['customerName'] =
+          booking['customerName'] ?? data?['name'] ?? booking['customerName'];
+      booking['customerPhone'] =
+          booking['customerPhone'] ??
+          data?['phone'] ??
+          booking['customerPhone'];
+      booking['customerGovernorate'] =
+          booking['customerGovernorate'] ??
+          data?['governorate'] ??
+          data?['city'] ??
+          booking['customerGovernorate'];
+      booking['customerArea'] =
+          booking['customerArea'] ?? data?['area'] ?? booking['customerArea'];
 
-      if (data != null) {
-        booking['customerName'] =
-            booking['customerName'] ?? data['name'] ?? booking['customerName'];
-        booking['customerPhone'] =
-            booking['customerPhone'] ??
-            data['phone'] ??
-            booking['customerPhone'];
-        booking['customerGovernorate'] =
-            booking['customerGovernorate'] ??
-            data['governorate'] ??
-            data['city'] ??
-            booking['customerGovernorate'];
-        booking['customerArea'] =
-            booking['customerArea'] ?? data['area'] ?? booking['customerArea'];
-
-        // تحد يث الحالة المحلية لعرض فوري
-        if (mounted) setState(() {});
-      }
+      // تحد يث الحالة المحلية لعرض فوري
+      if (mounted) setState(() {});
     } catch (e) {
       print('⚠️ فشل إكمال بيانات الزبون للحجز ${booking['id']}: $e');
     }

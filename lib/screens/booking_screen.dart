@@ -1029,6 +1029,17 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   Future<void> _bookService() async {
+    // التحقق مما إذا كان المستخدم ضيفاً
+    final prefs = await SharedPreferences.getInstance();
+    final userPhone = prefs.getString('user_phone');
+    if (userPhone == 'guest') {
+      _showErrorDialog(
+        'عملية غير متاحة للضيوف',
+        'لا يمكن تثبيت حجز بدون تسجيل حساب.\n\nيرجى إنشاء حساب للمتابعة.',
+      );
+      return;
+    }
+
     // التحقق من وجود itemId
     final itemId = widget.serviceData['id'] ?? '';
     if (itemId.isEmpty) {

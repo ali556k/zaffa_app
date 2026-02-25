@@ -1385,6 +1385,129 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final area = _userData?['area'] ?? 'غير محدد';
     final profileImage = _userData?['profileImage'];
 
+    // معالجة خاصة للضيف - إظهار رسالة محدودة
+    if (_userId == 'guest') {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F5),
+        appBar: AppBar(
+          title: const Text(
+            'الملف الشخصي',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          backgroundColor: const Color(0xFF530405),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+        ),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.blue.shade200, width: 2),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 64,
+                        color: Colors.blue.shade400,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'أنت تتصفح كضيف',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'يمكنك تصفح الخدمات والمنتجات والعناصر، لكن تحتاج لإنشاء حساب لتتمكن من:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[700],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '✓ تثبيت الحجوزات\n✓ التواصل مع مزودي الخدمات\n✓ الوصول للدعم الفني',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  icon: const Icon(Icons.app_registration),
+                  label: const Text('إنشاء حساب'),
+                  onPressed: () {
+                    // الانتقال إلى شاشة التسجيل
+                    Navigator.of(context).pushNamedAndRemoveUntil(
+                      '/',
+                      (route) => false,
+                    );
+                  },
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade600,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  icon: const Icon(Icons.logout),
+                  label: const Text('تسجيل الخروج'),
+                  onPressed: () async {
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.clear();
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SplashScreen()),
+                      (route) => false,
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -1636,6 +1759,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               onPressed: () => _handleLogout(),
             ),
+            const SizedBox(height: 16),
+
+            // زر حذف الحساب
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade50,
+                foregroundColor: Colors.red,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Colors.red.shade300),
+                ),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              icon: const Icon(Icons.delete_forever),
+              label: const Text(
+                'حذف الحساب',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              onPressed: () => _handleDeleteAccount(),
+            ),
             const SizedBox(height: 32),
           ],
         ),
@@ -1674,6 +1821,148 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _handleDeleteAccount() async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'حذف الحساب',
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'تحذير: سيؤدي هذا إلى حذف حسابك بشكل نهائي وغير قابل للاسترجاع.',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'سيتم حذف:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                '• جميع بيانات حسابك الشخصية',
+                style: TextStyle(fontSize: 14),
+              ),
+              Text(
+                '• سجل حجوزاتك',
+                style: TextStyle(fontSize: 14),
+              ),
+              Text(
+                '• رسائلك ومحادثاتك',
+                style: TextStyle(fontSize: 14),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'إلغاء',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text(
+                'حذف نهائياً',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete == true) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final userId = _userId;
+
+        if (userId != null && userId.isNotEmpty) {
+          // حذف بيانات المستخدم من Firebase
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .delete();
+
+          // حذف حجوزات المستخدم
+          final bookingsQuery = await FirebaseFirestore.instance
+              .collection('bookings')
+              .where('customerId', isEqualTo: userId)
+              .get();
+
+          for (var doc in bookingsQuery.docs) {
+            await doc.reference.delete();
+          }
+
+          // حذف جلسات المستخدم
+          try {
+            await FirebaseFirestore.instance
+                .collection('sessions')
+                .doc(userId)
+                .delete();
+          } catch (e) {
+            print('خطأ في حذف الجلسة: $e');
+          }
+
+          // حذف من قائمة المستخدمين المحفوظة محلياً
+          await prefs.clear();
+
+          // تنظيف المتغيرات العامة
+          currentUserId = null;
+          hasSubmittedInitialServices = false;
+          services.clear();
+          serviceItems.clear();
+          pendingItems.clear();
+
+          Navigator.of(context).pop();
+
+          // عرض رسالة نجاح
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم حذف حسابك بنجاح'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
+            ),
+          );
+
+          // الانتقال لشاشة تسجيل الدخول
+          await Future.delayed(const Duration(seconds: 2));
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const SplashScreen()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في حذف الحساب: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _handleLogout() async {
@@ -2177,6 +2466,7 @@ class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
                           const SizedBox(height: 12),
                           AccountStatementSection(providerId: currentUserId),
                           const SizedBox(height: 24),
+                          
                           // زر تسجيل الخروج
                           Center(
                             child: ElevatedButton.icon(
@@ -2314,6 +2604,30 @@ class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
                               },
                             ),
                           ),
+                          const SizedBox(height: 16),
+
+                          // زر حذف الحساب
+                          Center(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.delete_forever),
+                              label: const Text('حذف الحساب'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red.shade50,
+                                foregroundColor: Colors.red,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(color: Colors.red.shade300),
+                                ),
+                              ),
+                              onPressed: () async {
+                                _showDeleteAccountDialog(context, currentUserId);
+                              },
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -2364,6 +2678,173 @@ class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _showDeleteAccountDialog(
+    BuildContext context,
+    String providerId,
+  ) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text(
+            'حذف الحساب',
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+          ),
+          content: const Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'تحذير: سيؤدي هذا إلى حذف حسابك بشكل نهائي وغير قابل للاسترجاع.',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+              ),
+              SizedBox(height: 12),
+              Text(
+                'سيتم حذف:',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                '• جميع بيانات حسابك والخدمات',
+                style: TextStyle(fontSize: 14),
+              ),
+              Text(
+                '• سجل الحجوزات والعناصر',
+                style: TextStyle(fontSize: 14),
+              ),
+              Text(
+                '• رسائلك ومحادثاتك',
+                style: TextStyle(fontSize: 14),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'إلغاء',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text(
+                'حذف نهائياً',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete == true) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      try {
+        // حذف بيانات مزود الخدمة من Firebase
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(providerId)
+            .delete();
+
+        // حذف بيانات المزود من جدول providers
+        await FirebaseFirestore.instance
+            .collection('providers')
+            .doc(providerId)
+            .delete();
+
+        // حذف خدمات المزود
+        final servicesQuery = await FirebaseFirestore.instance
+            .collection('provider_services')
+            .where('providerId', isEqualTo: providerId)
+            .get();
+
+        for (var doc in servicesQuery.docs) {
+          await doc.reference.delete();
+        }
+
+        // حذف العناصر المنشورة للمزود
+        final itemsQuery = await FirebaseFirestore.instance
+            .collection('published_items')
+            .where('providerId', isEqualTo: providerId)
+            .get();
+
+        for (var doc in itemsQuery.docs) {
+          await doc.reference.delete();
+        }
+
+        // حذف حجوزات المزود
+        final bookingsQuery = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('providerId', isEqualTo: providerId)
+            .get();
+
+        for (var doc in bookingsQuery.docs) {
+          await doc.reference.delete();
+        }
+
+        // حذف جلسات المزود
+        try {
+          await FirebaseFirestore.instance
+              .collection('sessions')
+              .doc(providerId)
+              .delete();
+        } catch (e) {
+          print('خطأ في حذف الجلسة: $e');
+        }
+
+        // حذف البيانات المحلية
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+
+        // تنظيف المتغيرات العامة
+        currentUserId = null;
+        hasSubmittedInitialServices = false;
+        services.clear();
+        serviceItems.clear();
+        pendingItems.clear();
+
+        Navigator.of(context).pop();
+
+        // عرض رسالة نجاح
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم حذف حسابك بنجاح'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // الانتقال لشاشة تسجيل الدخول
+        await Future.delayed(const Duration(seconds: 2));
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const SplashScreen()),
+          (route) => false,
+        );
+      } catch (e) {
+        Navigator.of(context).pop();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في حذف الحساب: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }
 

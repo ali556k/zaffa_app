@@ -327,7 +327,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   // شعار التطبيق
                   ClipOval(
                     child: Image.asset(
-                      'assets/app_icon_new.png',
+                      'assets/home1.png',
                       width: 130,
                       height: 130,
                       fit: BoxFit.cover,
@@ -629,6 +629,37 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                     child: Text(
                       'نسيت كلمة المرور؟',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // زر الدخول كضيف
+                  TextButton(
+                    onPressed: () async {
+                      // حفظ بيانات الضيف
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setString('user_phone', 'guest');
+                      await prefs.setString('user_name', 'ضيف');
+                      await prefs.setString('account_type', 'guest');
+
+                      if (mounted) {
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(
+                            builder: (context) => const MainNavigationScreen(),
+                          ),
+                          (route) => false,
+                        );
+                      }
+                    },
+                    child: Text(
+                      'الدخول كـضيف',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.9),
                         fontSize: 15,
