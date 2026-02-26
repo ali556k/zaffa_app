@@ -1,0 +1,1123 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../screens/booking_screen.dart';
+import '../utils/image_utils.dart';
+import '../utils/storage_helper.dart';
+
+class HallDetailsScreen extends StatefulWidget {
+  final String providerId;
+  final String providerName;
+  final Map<String, dynamic> providerData;
+
+  const HallDetailsScreen({
+    Key? key,
+    required this.providerId,
+    required this.providerName,
+    required this.providerData,
+  }) : super(key: key);
+
+  @override
+  State<HallDetailsScreen> createState() => _HallDetailsScreenState();
+}
+
+class _HallDetailsScreenState extends State<HallDetailsScreen> {
+  bool isLoading = true;
+  Map<String, dynamic> fullProviderData = {};
+  String? hallDocumentId; // معرف الوثيقة من Firestore
+  final PageController _imagePageController = PageController();
+  int _currentImageIndex = 0;
+  bool isPhotography = false; // للتفريق بين القاعات والتصوير
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFullProviderData();
+  }
+
+  @override
+  void dispose() {
+    _imagePageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadFullProviderData() async {
+    try {
+      // تحميل البيانات الكاملة للمزود من published_providers
+      final doc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .where('providerId', isEqualTo: widget.providerId)
+          .limit(1)
+          .get();
+
+      if (doc.docs.isNotEmpty) {
+        final docId = doc.docs.first.id;
+        final data = doc.docs.first.data();
+        setState(() {
+          fullProviderData = data;
+          // استخدام document ID الفريد من Firestore - هذا هو المعرف الحقيقي للعنصر
+          hallDocumentId = docId;
+          // تحديد نوع الخدمة
+          isPhotography = data['category'] == 'photography';
+          isLoading = false;
+        });
+      } else {
+        // إذا لم توجد في published_providers، استخدم البيانات المرسلة
+        setState(() {
+          fullProviderData = widget.providerData;
+          hallDocumentId =
+              null; // لا تستخدم providerId - اجبر على استخدام معرف فريد
+          isPhotography = widget.providerData['category'] == 'photography';
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ خطأ في تحميل بيانات القاعة: $e');
+      setState(() {
+        fullProviderData = widget.providerData;
+        isPhotography = widget.providerData['category'] == 'photography';
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('تفاصيل ${widget.providerName}'),
+          backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+          foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final images = ImageUtils.getImages(fullProviderData);
+
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          // App Bar مع الصور
+          SliverAppBar(
+            expandedHeight: 300,
+            pinned: true,
+            backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+            iconTheme: const IconThemeData(color: Colors.white),
+            flexibleSpace: FlexibleSpaceBar(
+              title: Text(
+                fullProviderData['serviceName'] ?? widget.providerName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  shadows: [Shadow(color: Colors.black45, blurRadius: 2)],
+                ),
+              ),
+              background: images.isNotEmpty
+                  ? Stack(
+                      children: [
+                        PageView.builder(
+                          controller: _imagePageController,
+                          onPageChanged: (index) {
+                            setState(() {
+                              _currentImageIndex = index;
+                            });
+                          },
+                          itemCount: images.length,
+                          itemBuilder: (context, index) {
+                            return FutureBuilder<String>(
+                              future: StorageHelper.getValidImageUrl(
+                                images[index].toString(),
+                              ),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor:
+                                          const AlwaysStoppedAnimation<Color>(
+                                            Color(0xFFB46A6A),
+                                          ),
+                                    ),
+                                  );
+                                }
+
+                                if (snapshot.hasError || !snapshot.hasData) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.image_not_supported,
+                                        size: 60,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                return Image.network(
+                                  snapshot.data!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      color: Colors.grey[300],
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.image_not_supported,
+                                          size: 60,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        ),
+
+                        // مؤشر الصور
+                        if (images.length > 1)
+                          Positioned(
+                            bottom: 16,
+                            right: 0,
+                            left: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(
+                                images.length,
+                                (index) => Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _currentImageIndex == index
+                                        ? Colors.white
+                                        : Colors.white.withOpacity(0.5),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    )
+                  : Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            const Color(0xFFB46A6A).withOpacity(0.3),
+                            const Color(0xFFB46A6A).withOpacity(0.1),
+                          ],
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.event, size: 80, color: Colors.white),
+                      ),
+                    ),
+            ),
+          ),
+
+          // المحتوى
+          SliverToBoxAdapter(
+            child: Container(
+              color: const Color(0xFFF8F9FA),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Hall Basic Information
+                  _buildHallBasicInfo(),
+
+                  const SizedBox(height: 16),
+
+                  // Location Button
+                  _buildLocationButton(),
+
+                  const SizedBox(height: 24),
+
+                  // Hall Details
+                  _buildHallDetailsCard(),
+
+                  const SizedBox(height: 24),
+
+                  // Price Card
+                  _buildPriceCard(),
+
+                  const SizedBox(height: 24),
+
+                  // Included Services Card
+                  _buildIncludedServicesCard(),
+
+                  const SizedBox(height: 24),
+
+                  // Booking Buttons
+                  _buildBookingButtons(),
+
+                  const SizedBox(height: 100), // مساحة إضافية
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHallBasicInfo() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Hall Name
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB46A6A).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.event,
+                    color: Color(0xFFB46A6A),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    fullProviderData['serviceName'] ?? widget.providerName,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2D3748),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Hall Name from hallData
+            if (fullProviderData['hallData'] != null &&
+                fullProviderData['hallData']['hallName'] != null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFFB46A6A).withOpacity(0.1),
+                      const Color(0xFFB46A6A).withOpacity(0.05),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFB46A6A).withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.home_work,
+                      color: Color(0xFFB46A6A),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'اسم القاعة',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6B7280),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            fullProviderData['hallData']['hallName'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 16),
+
+            // Capacity and Governorate - عرض السعة فقط للقاعات وليس للتصوير
+            Row(
+              children: [
+                if (!isPhotography)
+                  Expanded(
+                    child: _buildInfoItem(
+                      icon: Icons.people,
+                      label: 'سعة القاعة',
+                      value: _getCapacity(),
+                    ),
+                  ),
+                if (!isPhotography) const SizedBox(width: 16),
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.location_city,
+                    label: 'المحافظة',
+                    value: fullProviderData['governorate'] ?? 'غير محدد',
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Area
+            _buildInfoItem(
+              icon: Icons.place,
+              label: 'المنطقة',
+              value: fullProviderData['area'] ?? 'غير محدد',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLocationButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: _showLocationOnMap,
+        icon: const Icon(Icons.map, color: Colors.white),
+        label: const Text(
+          'إظهار الموقع على الخريطة',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF10B981),
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 4,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHallDetailsCard() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B82F6).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    isPhotography ? Icons.camera_alt : Icons.info,
+                    color: const Color(0xFF3B82F6),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Text(
+                  isPhotography ? 'تفاصيل خدمة التصوير' : 'تفاصيل القاعة',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D3748),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // نوع الكاميرا للتصوير
+            if (isPhotography && fullProviderData['cameraType'] != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.videocam, color: Colors.purple, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'نوع الكاميرا',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.purple,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            fullProviderData['cameraType'],
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 120),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!, width: 1),
+              ),
+              child: Text(
+                fullProviderData['description'] ??
+                    (isPhotography
+                        ? 'خدمة تصوير احترافية تشمل:\n\n• تصوير فوتوغرافي عالي الجودة\n• تصوير فيديو سينمائي\n• طاقم محترف\n• معدات حديثة\n• مونتاج احترافي\n• ألبوم رقمي\n• توصيل سريع للصور'
+                        : 'قاعة أعراس فاخرة مجهزة بأحدث التقنيات والديكورات العصرية لتوفير أجواء مثالية لحفل زفافكم المميز. تشمل القاعة:\n\n• نظام صوت متطور\n• إضاءة احترافية\n• تكييف مركزي\n• مواقف سيارات\n• أماكن تصوير مميزة\n• خدمات طعام'),
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF4A5568),
+                  height: 1.6,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceCard() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [const Color(0xFFB46A6A).withOpacity(0.1), Colors.white],
+          ),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFB46A6A).withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.attach_money,
+                    color: Color(0xFFB46A6A),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Text(
+                  'السعر',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D3748),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '${_formatPrice(_getBasePrice())}',
+                  style: const TextStyle(
+                    fontSize: 32,
+                    color: Color(0xFFB46A6A),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'دينار عراقي',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Color(0xFF4A5568),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // ملاحظة: السعر الأساسي
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.blue[700]),
+                  const SizedBox(width: 8),
+                  Text(
+                    isPhotography
+                        ? 'السعر للساعة الواحدة'
+                        : 'السعر الأساسي للقاعة (لا يشمل الخدمات الضمنية)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF1976D2),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIncludedServicesCard() {
+    // إخفاء الخدمات الضمنية للتصوير
+    if (isPhotography) {
+      return const SizedBox.shrink();
+    }
+
+    // الحصول على الخدمات الضمنية من البيانات
+    List<dynamic> includedServices = [];
+
+    // محاولة الحصول على الخدمات من hallData أولاً
+    if (fullProviderData['hallData'] != null) {
+      includedServices = fullProviderData['hallData']['includedServices'] ?? [];
+    }
+
+    // إذا لم توجد في hallData، جرب مباشرة من fullProviderData
+    if (includedServices.isEmpty) {
+      includedServices = fullProviderData['includedServices'] ?? [];
+    }
+
+    // إذا لم توجد خدمات ضمنية، لا تعرض البطاقة
+    if (includedServices.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.room_service,
+                    color: Color(0xFF10B981),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                const Text(
+                  'الخدمات الضمنية المتوفرة',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D3748),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            const Text(
+              'تشمل القاعة الخدمات التالية:',
+              style: TextStyle(
+                fontSize: 14,
+                color: Color(0xFF6B7280),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // عرض الخدمات الضمنية
+            ...includedServices.map((service) {
+              String serviceName = service['name'] ?? 'خدمة غير محددة';
+              double servicePrice = (service['price'] ?? 0).toDouble();
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF10B981).withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981).withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.check_circle,
+                        color: Color(0xFF10B981),
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        serviceName,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2D3748),
+                        ),
+                      ),
+                    ),
+                    if (servicePrice > 0) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${_formatPrice(servicePrice)} د.ع',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }).toList(),
+
+            const SizedBox(height: 16),
+
+            // إجمالي سعر الخدمات الضمنية
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF10B981).withOpacity(0.2),
+                    const Color(0xFF10B981).withOpacity(0.1),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'إجمالي قيمة الخدمات الضمنية',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2D3748),
+                    ),
+                  ),
+                  Text(
+                    '${_formatPrice(_calculateTotalServicesPrice(includedServices))} د.ع',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF10B981),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _calculateTotalServicesPrice(List<dynamic> services) {
+    double total = 0.0;
+    for (var service in services) {
+      total += (service['price'] ?? 0).toDouble();
+    }
+    return total;
+  }
+
+  String _getCapacity() {
+    // محاولة الحصول على السعة من أماكن مختلفة
+    String? capacity;
+
+    // من hallData أولاً
+    if (fullProviderData['hallData'] != null) {
+      capacity = fullProviderData['hallData']['capacity']?.toString();
+    }
+
+    // إذا لم توجد، جرب من fullProviderData مباشرة
+    if (capacity == null || capacity.isEmpty) {
+      capacity = fullProviderData['capacity']?.toString();
+    }
+
+    // إذا لم توجد بعد، استخدم قيمة افتراضية
+    if (capacity == null || capacity.isEmpty) {
+      return '300 شخص';
+    }
+
+    // إذا كانت السعة رقم فقط، أضف "شخص"
+    if (int.tryParse(capacity) != null) {
+      return '$capacity شخص';
+    }
+
+    return capacity;
+  }
+
+  double _getBasePrice() {
+    // محاولة الحصول على السعر الأساسي من أماكن مختلفة
+    double? price;
+
+    print('💰 محاولة جلب السعر...');
+
+    // من hallData.basePrice أولاً
+    if (fullProviderData['hallData'] != null) {
+      var basePrice = fullProviderData['hallData']['basePrice'];
+      print('   📦 hallData.basePrice: $basePrice');
+      if (basePrice != null) {
+        price = (basePrice is int)
+            ? basePrice.toDouble()
+            : basePrice as double?;
+      }
+    }
+
+    // إذا لم توجد، جرب من fullProviderData.basePrice
+    if (price == null || price == 0) {
+      var basePrice = fullProviderData['basePrice'];
+      print('   📦 fullProviderData.basePrice: $basePrice');
+      if (basePrice != null) {
+        price = (basePrice is int)
+            ? basePrice.toDouble()
+            : basePrice as double?;
+      }
+    }
+
+    // إذا لم توجد، جرب من fullProviderData.price
+    if (price == null || price == 0) {
+      var priceValue = fullProviderData['price'];
+      print('   📦 fullProviderData.price: $priceValue');
+      if (priceValue != null) {
+        price = (priceValue is int)
+            ? priceValue.toDouble()
+            : priceValue as double?;
+      }
+    }
+
+    print('   ✅ السعر النهائي: $price');
+    return price ?? 0.0;
+  }
+
+  Widget _buildBookingButtons() {
+    return Column(
+      children: [
+        // Confirm Booking Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _confirmBooking,
+            icon: const Icon(Icons.check_circle, color: Colors.white, size: 20),
+            label: const Text(
+              'تثبيت الحجز',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFB46A6A),
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              elevation: 4,
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // View Bookings Button
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _viewBookings,
+            icon: const Icon(Icons.history, color: Color(0xFFB46A6A), size: 20),
+            label: const Text(
+              'عرض الحجوزات',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFFB46A6A),
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFFB46A6A), width: 2),
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoItem({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: const Color(0xFFB46A6A), size: 18),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Color(0xFF2D3748),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationOnMap() async {
+    try {
+      // التحقق من وجود إحداثيات الموقع في البيانات
+      if (fullProviderData['location'] != null &&
+          fullProviderData['location']['latitude'] != null &&
+          fullProviderData['location']['longitude'] != null) {
+        double lat = fullProviderData['location']['latitude'];
+        double lng = fullProviderData['location']['longitude'];
+
+        // إنشاء رابط خرائط جوجل
+        String googleMapsUrl =
+            'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+        Uri uri = Uri.parse(googleMapsUrl);
+
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          // في حالة فشل فتح الرابط، إظهار رسالة خطأ
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('لا يمكن فتح خرائط جوجل'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        // في حالة عدم وجود إحداثيات، إظهار رسالة تنبيه
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('موقع القاعة غير متوفر'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      print('خطأ في فتح الموقع: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('حدث خطأ في فتح الموقع'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _confirmBooking() {
+    // التحقق من وجود معرف فريد
+    if (hallDocumentId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('خطأ: لا يمكن الحجز. يرجى إعادة تحميل الصفحة.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookingScreen(
+          serviceData: {
+            'id': hallDocumentId!, // استخدام document ID الفريد فقط
+            'name': fullProviderData['serviceName'] ?? 'قاعة أعراس',
+            'providerId': widget.providerId,
+            'providerPhone': fullProviderData['phone'] ?? widget.providerId,
+            'price': _getBasePrice().toString(), // استخدام السعر الصحيح
+            'serviceType': 'hall',
+            'providerName':
+                fullProviderData['providerName'] ?? widget.providerName,
+          },
+        ),
+      ),
+    );
+  }
+
+  void _viewBookings() {
+    // TODO: Implement view bookings functionality
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.history, color: Color(0xFFB46A6A)),
+            SizedBox(width: 8),
+            Text('الحجوزات'),
+          ],
+        ),
+        content: const Text(
+          'ستظهر هنا قائمة بجميع حجوزاتك السابقة والحالية',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('close'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatPrice(dynamic price) {
+    if (price == null) return '0';
+
+    try {
+      num priceNum = 0;
+      if (price is String) {
+        priceNum = num.tryParse(price.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0;
+      } else if (price is num) {
+        priceNum = price;
+      }
+
+      return priceNum
+          .toStringAsFixed(0)
+          .replaceAllMapped(
+            RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+            (Match m) => '${m[1]},',
+          );
+    } catch (e) {
+      return price.toString();
+    }
+  }
+}

@@ -1,0 +1,174 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+class PhoneVerificationScreen extends StatefulWidget {
+  final String phoneNumber; // رقم الهاتف بصيغة 07XXXXXXXXX
+  const PhoneVerificationScreen({super.key, required this.phoneNumber});
+
+  @override
+  State<PhoneVerificationScreen> createState() =>
+      _PhoneVerificationScreenState();
+}
+
+class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
+  final TextEditingController _codeController = TextEditingController();
+  String? _verificationId;
+  bool _isSending = false;
+  bool _isVerifying = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _startVerification();
+  }
+
+  Future<void> _startVerification() async {
+    setState(() {
+      _isSending = true;
+      _error = null;
+    });
+
+    try {
+      await FirebaseAuth.instance.verifyPhoneNumber(
+        phoneNumber: widget.phoneNumber,
+        timeout: const Duration(seconds: 60),
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          // Auto-retrieval on Android
+          try {
+            final userCred = await FirebaseAuth.instance.signInWithCredential(
+              credential,
+            );
+            if (mounted) Navigator.of(context).pop(userCred.user);
+          } catch (e) {
+            setState(() {
+              _error = 'فشل التحقق التلقائي: $e';
+            });
+          }
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          setState(() {
+            _error = e.message ?? 'فشل التحقق من رقم الهاتف';
+          });
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          setState(() {
+            _verificationId = verificationId;
+          });
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          setState(() {
+            _verificationId = verificationId;
+          });
+        },
+      );
+    } catch (e) {
+      setState(() {
+        _error = 'تعذر بدء التحقق: $e';
+      });
+    } finally {
+      if (mounted)
+        setState(() {
+          _isSending = false;
+        });
+    }
+  }
+
+  Future<void> _verifyCode() async {
+    if (_verificationId == null || _codeController.text.trim().isEmpty) {
+      setState(() {
+        _error = 'يرجى إدخال رمز التحقق';
+      });
+      return;
+    }
+
+    setState(() {
+      _isVerifying = true;
+      _error = null;
+    });
+
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: _verificationId!,
+        smsCode: _codeController.text.trim(),
+      );
+      final userCred = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
+      if (mounted) Navigator.of(context).pop(userCred.user);
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _error = e.message ?? 'رمز غير صحيح';
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'فشل تسجيل الدخول: $e';
+      });
+    } finally {
+      if (mounted)
+        setState(() {
+          _isVerifying = false;
+        });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'التحقق من رقم الهاتف',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF1E88E5),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'سيتم إرسال رمز تحقق إلى: ${widget.phoneNumber}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            if (_error != null) ...[
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 8),
+            ],
+            if (_isSending)
+              const Center(child: CircularProgressIndicator())
+            else ...[
+              TextField(
+                controller: _codeController,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                  labelText: 'رمز التحقق (OTP)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _isVerifying ? null : _verifyCode,
+                child: _isVerifying
+                    ? SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text('confirm'),
+              ),
+              TextButton(
+                onPressed: _startVerification,
+                child: const Text('إعادة إرسال الرمز'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

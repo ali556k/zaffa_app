@@ -1,0 +1,2715 @@
+   - اسم القاعة: ${savedData?[
+   - اسم المزود: ${serviceData[
+   - الاسم التجاري (من providers.name): ${serviceData[
+   - الاسم: ${_providerData?[
+   - البيانات المحفوظة: ${savedDoc.data()}
+   - السعة: ${savedData?[
+   - المحافظة: ${_providerData?[
+   - المنطقة: ${_providerData?[
+   - المنطقة: ${serviceData[
+   - بطاقة الائتمان: ${_providerData?[
+   - نوع الخدمة (من category): ${serviceData[
+   1. هل تمت الموافقة على الطلب من المالك؟
+   2. هل الحقل category = 
+   3. هل الحقل isActive = true؟
+   4. هل البيانات موجودة في مجموعة published_providers؟
+   التتبع: $stackTrace
+   الخطأ: $e
+   نوع الخدمة: 
+   ⚠️ provider_services: لا توجد خدمات
+   ⚠️ providers: لا يوجد مستند
+   ⚠️ users: لا يوجد مستند
+   ✅ السعر النهائي: $price
+   ✅ نشط: ${data[
+   ❌ provider_services: خطأ - $e
+   ❌ providers: خطأ - $e
+   ❌ users refresh: خطأ - $e
+   ❌ users: خطأ - $e
+   � اسم المزود: ${data[
+   � السعة: ${data[
+   🎯 هل هو قاعة عرس؟ $isHallService
+   🏛️ اسم القاعة: ${data[
+   🏷️ الفئة: ${data[
+   👤 الاسم: ${userData?[
+   💰 السعر: ${data[
+   📄 البيانات الكاملة: $userData
+   📋 جميع الحقول: ${data.keys.toList()}
+   📍 المحافظة (city): ${userData?[
+   📍 المحافظة (governorate): ${userData?[
+   📍 المنطقة: ${userData?[
+   📍 الموقع: ${data[
+   📍 بعد: governorate=
+   📍 قبل: governorate=
+   📞 الهاتف: ${userData?[
+  - الاسم: $finalProviderName
+  - الخدمة: $finalServiceName
+  - المحافظة: $finalGovernorate
+  - المنطقة: $finalArea
+  - الهاتف: $finalPhone
+  ⚠️ تم تجاهل العنصر المكرر: $itemId
+  📄 عنصر معلق: ${itemData[
+  📄 عنصر: ${itemData[
+ &&
+                    !_isFullDayBooking
+                ? _getBookedHours()
+                : null, // عدد الساعات للتصوير فقط
+            // معلومات موقع الزبون لعرضها للمزود
+            
+ + p.substring(4);
+    }
+    // إزالة 00964 أيضاً
+    if (p.startsWith(
+ - قد تكون هناك مشكلة في التصنيف!
+ ? Colors.green : Colors.red,
+        ),
+      );
+
+      // تحديث فوري لإخفاء الأزرار وإظهار شارة الحالة
+      setState(() {
+        booking[
+ || role == null; // null قد يكون عميل قديم
+          } else {
+            return role == 
+ أو 
+ إذا كانت الموافقة موجودة
+          _backfillItemStatuses(allItems);
+
+          print(
+ إلى 
+ بمعرف: ${hallArabicRef.id}
+ بمعرف: ${itemArabicRef.id}
+ بنجاح
+ تم تصنيفها كـ 
+ د.ع
+ عند عرض تفاصيل الخدمة.
+ لإضافة حجز
+ لبدء إضافة العناصر
+ لبدء إضافة عناصر خدمتك
+ من المفضلات؟
+ والمسافات
+    String cleanPrice = priceString
+        .replaceAll(
+ وحذفه
+ وسيتمكن الزبائن الآخرون من حجزه.
+$businessName (طلب جديد)
+$capacity شخص
+$count مزود
+$days يوم $hours ساعة
+$details\nالمكان: $location
+$itemsCount عنصر متاح
+$monthName\n${rod.toY.toInt()} حجز
+$price د.ع
+$price دينار
+$price ريال
+$pricePerHour د.ع
+$totalItems عنصر جديد
+${_bookedDates.length} يوم محجوز
+${_bookings.length} حجز
+${_formatPrice(_calculateFinalPrice())} د.ع
+${_formatPrice(_calculateTotalServicesPrice(includedServices))} د.ع
+${_formatPrice(_getBookedHours())} ساعة
+${_formatPrice(finalPrice)} د.ع
+${_formatPrice(servicePrice)} د.ع
+${amount.toStringAsFixed(2)} د.ع
+${difference.inDays} أيام
+${entry.value} حجز
+${entry.value} حجز (${percentage.toStringAsFixed(1)}%)
+${favorite.price} د.ع
+${images.length} صور متاحة - اسحب لعرض المزيد
+${images.length} صورة
+${item.value} حجز (${percentage.toStringAsFixed(1)}%)
+${pendingItems.length} عنصر جديد
+${stats.totalRatings} تقييم
+(${_images.length}/3 صور كحد أدنى)
+)
+              .doc(_providerId)
+              .get();
+        }
+
+        // 3. إذا لم يكن موجوداً، ابحث في provider_services
+        if (!serviceDoc.exists) {
+          print(
+            
+)
+            .doc(_providerId)
+            .get();
+
+        // 2. إذا لم يكن موجوداً، ابحث في provider_requests (للطلبات قيد المراجعة)
+        if (!serviceDoc.exists) {
+          print(
+            
+)
+            .doc(widget.providerId)
+            .get();
+      }
+
+      // التحقق من وجود المستند
+      if (!doc.exists) {
+        throw Exception(
+)
+          .add(requestData);
+
+      // أيضاً حفظ في admin_requests
+      await FirebaseFirestore.instance
+          .collection(
+)
+          .doc(serviceId)
+          .delete();
+      // يمكنك هنا إضافة منطق إضافي مثل إشعار المزود أو تحديث واجهة المستخدم
+    }
+  } catch (e) {
+    print(
+)
+          .doc(userPhone)
+          .set(providerData);
+
+      // إرسال نسخة إلى مجموعة admin_requests
+      await FirebaseFirestore.instance
+          .collection(
+)
+          .doc(widget.providerId)
+          .get();
+
+      // إذا لم يكن موجوداً، استخدم provider_requests
+      if (!doc.exists) {
+        collection = 
+)
+          .doc(widget.providerId)
+          .set(requestData);
+
+      // تحديث بيانات المزود في مجموعة providers
+      await FirebaseFirestore.instance
+          .collection(
+)
+          .doc(widget.providerId)
+          .set(serviceData);
+
+      // إرسال طلب للمالك لجميع الخدمات
+      await FirebaseFirestore.instance
+          .collection(
+)
+        .length;
+
+    // تصفية الحجوزات المعلقة
+    _pendingBookings = _bookings
+        .where((booking) => booking[
+) {
+          // البحث في كامل مجموعة provider_requests
+          final allRequestsQuery = await FirebaseFirestore.instance
+              .collection(
+) {
+          await _loadApprovedItems(requestData);
+        } else {
+          // إذا كان الطلب معلق أو مرفوض، نحمل العناصر من الطلب
+          _items = List<Map<String, dynamic>>.from(requestData[
+) {
+      return Colors.green; // نشط
+    } else if (status == 
+) {
+      return Colors.orange; // معلق
+    } else if (status == 
+) {
+      return Colors.red; // مرفوض
+    }
+
+    // الرجوع للطريقة القديمة كخيار احتياطي
+    final isApproved = item[
+) {
+      return status!;
+    }
+    // افتراضي: إذا لم تُحدَّد الحالة، اعتبرها pending
+    return 
+), // التصوير
+                    _serviceImageButton(
+), // بدلة رجالي
+                    _serviceImageButton(
+), // تاجير السيارات
+                    _serviceImageButton(
+), // تزيين السيارة
+                    _serviceImageButton(
+), // صالون وعناية
+                    _serviceImageButton(
+), // طعام
+                    _serviceImageButton(
+), // فستان الزفاف
+                    _serviceImageButton(
+), // فنادق
+                    _serviceImageButton(
+), // قاعات اعراس
+                    _serviceImageButton(
+), // كيك
+                    _serviceImageButton(
+), // ورد
+                    _serviceImageButton(
+).format(_monthlyRevenue)} د.ع
+).format(_totalRevenue)} د.ع
+).format(date);
+
+      // تحديد المجموعة الصحيحة للتحديث
+      String collection = 
+).format(date)} بالكامل
+).length;
+
+    // حساب إحصائيات الحجوزات
+    _totalBookings = _bookings.length;
+    _pendingBookingsCount = _bookings
+        .where((booking) => booking[
+).toString().isNotEmpty;
+
+      if (hasGov && hasArea && hasName && hasPhone) return; // مكتملة
+
+      final cid = (booking[
+).toString();
+            if (pid.isEmpty) continue;
+            // احتفظ بأول عنصر لكل مزود
+            byProvider.putIfAbsent(pid, () {
+              return {
+                
+);
+
+                    // إرسال طلب مزود خدمة للمالك
+                    await FirebaseFirestore.instance
+                        .collection(
+);
+
+                // إنشاء أو تحديث وثيقة المحادثة
+                final chatDoc = FirebaseFirestore.instance
+                    .collection(
+);
+
+          // التحقق من نوع الخدمة لتوجيه التنقل المناسب
+          if (provider[
+);
+
+          // تحديث الإحصائيات
+          _updateProfessionalStatistics();
+        }
+      } else {
+        print(
+);
+
+          // محاولة جلب المحافظة والمنطقة ورقم بطاقة الائتمان من _serviceData أيضاً
+          if (_serviceData![
+);
+
+        // رفع الصور للـ Firebase Storage
+        final List<String> imageUrls = [];
+        final List<XFile> images = item[
+);
+
+      // إذا كان المستخدم هو المالك، استخدم رقم المالك مباشرة
+      const String ownerPhone = 
+);
+
+      // إغلاق مؤشر التحميل
+      Navigator.pop(context);
+
+      // عرض رسالة النجاح
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+);
+
+      // استعلام Firebase
+      Query query = FirebaseFirestore.instance
+          .collection(
+);
+
+      // البحث في مجموعة services عن الخدمات المعتمدة لهذا النوع
+      final servicesQuery = await FirebaseFirestore.instance
+          .collection(
+);
+
+      // التأكد من أن serviceType هو النوع العربي الصحيح
+      String serviceType = widget.providerData[
+);
+
+      // التحقق من حفظ البيانات
+      final savedDoc = await providerDocRef.get();
+      if (savedDoc.exists) {
+        print(
+);
+
+      // حساب عدد الحجوزات المقبولة
+      print(
+);
+
+      // حفظ الجلسة في Firestore
+      await FirebaseFirestore.instance
+          .collection(
+);
+
+      // حفظ الجلسة في Firestore
+      await FirebaseFirestore.instance.collection(
+);
+
+      // حفظ الجلسة في Firestore أيضاً
+      await FirebaseFirestore.instance
+          .collection(
+);
+
+      // حفظ معلومات الخدمة في Firestore
+      await FirebaseFirestore.instance
+          .collection(
+);
+
+      if (_providerId != null) {
+        // تحميل بيانات الخدمة
+        final serviceDoc = await FirebaseFirestore.instance
+            .collection(
+);
+
+      if (_providerId != null) {
+        // تحميل بيانات مزود الخدمة الشخصية
+        final providerDoc = await FirebaseFirestore.instance
+            .collection(
+);
+
+      if (providerId != null && providerId.isNotEmpty) {
+        // حفظ التوكن في providers collection
+        await NotificationService().saveProviderToken(providerId);
+        print(
+);
+
+    // التحقق الإضافي من نوع المزود
+    String providerType =
+        _serviceData?[
+);
+
+    // التحقق من نوع الخدمة
+    bool isHallProvider =
+        serviceType == 
+);
+
+    // حفظ الجلسة في Firestore
+    await FirebaseFirestore.instance.collection(
+);
+
+    if (currentUserId != null) {
+      // التحقق من صحة البيانات المحفوظة
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection(
+);
+    
+    // ====== الفحص الأولي للنموذج ======
+    if (!_formKey.currentState!.validate()) {
+      print(
+);
+      
+      // التحقق من المنطقة
+      if (_areaController.text.trim().isEmpty) {
+        print(
+);
+      
+      // حفظ الجلسة في Firestore أيضاً
+      await FirebaseFirestore.instance.collection(
+);
+        
+        // تحميل بيانات الخدمة
+        final serviceDoc = await FirebaseFirestore.instance
+            .collection(
+);
+              
+              // حفظ البيانات للمرة القادمة
+              await prefs.setString(
+);
+            }
+          });
+          
+          // التحقق من نوع الحساب
+          final accountType = prefs.getString(
+);
+          }
+        }
+
+        // تحميل الحجوزات
+        final bookingsSnapshot = await FirebaseFirestore.instance
+            .collection(
+);
+          }
+        }
+        
+        // تحميل الحجوزات
+        final bookingsSnapshot = await FirebaseFirestore.instance
+            .collection(
+);
+        // طباعة معرفات المزودين للتحقق
+        for (var doc in snapshot.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          print(
+);
+        }
+
+        // تحميل بيانات الخدمة
+        final serviceDoc = await FirebaseFirestore.instance
+            .collection(
+);
+        }
+        
+        // حفظ بيانات التسجيل
+        await _saveProviderLoginData();
+        
+        // تحميل العناصر من جميع مجموعات الخدمات
+        final serviceTypes = [
+);
+        }
+      } else {
+        // نشر العناصر العادية في المجموعة المناسبة (restaurant, cake, car, etc.)
+        print(
+);
+        } else {
+          // محاولة الحصول على بيانات الخدمة من مجموعة providers
+          // تحديد نوع الخدمة والاسم الافتراضي
+          String actualServiceType = 
+);
+      return;
+    }
+    
+    // ====== الفحص: هل تم اختيار نوع الخدمة؟ ======
+    if (_selectedServiceType == null || _selectedServiceType!.isEmpty) {
+      print(
+);
+      }
+
+      // تحديث العنصر الأصلي
+      await FirebaseFirestore.instance
+          .collection(
+);
+      }
+
+      if (timeSlot != null) {
+        // حجب فترة زمنية محددة فقط
+        final slotKey = 
+);
+    // إزالة بادئة +964 وتحويلها إلى 0
+    if (p.startsWith(
+)} د.ع
+)} دينار
+)} دينار عراقي
+,
+
+        // العناصر
+        
+,
+              );
+            } else {
+              // زيادة عدد العناصر للمزود
+              providersData[providerId]![
+,
+            );
+          }
+
+          // خريطة تحويل الأنواع الإنجليزية إلى العربية
+          Map<String, String> serviceTypeMapping = {
+            
+,
+            );
+          } else {
+            // زيادة عدد العناصر للمزود
+            providersData[providerId]![
+,
+          );
+        }
+
+        // إذا لم يتم العثور على عناصر في provider_items، تحقق من published_items
+        if (allItems.isEmpty) {
+          print(
+            
+,
+          });
+
+      // حفظ/تحديث مزود في مجموعة providers مع جميع المعلومات
+      await FirebaseFirestore.instance
+          .collection(
+,
+          });
+
+      // طباعة ملخص نهائي
+      print(
+,
+        );
+        dayStatus = DayStatus.partiallyBooked;
+      }
+
+      // إنشاء نموذج الحجز
+      final booking = BookingModel(
+        itemId: widget.serviceData[
+,
+      );
+
+      // تحديد أسماء المجموعات التي قد تحتوي على العناصر
+      List<String> possibleCollections = [
+        
+,
+      );
+
+      await ref.putData(await image.readAsBytes());
+      final imageUrl = await ref.getDownloadURL();
+
+      // تحديث قاعدة البيانات
+      await FirebaseFirestore.instance.collection(
+,
+      ];
+
+      for (String serviceType in serviceTypes) {
+        // تحميل من المجموعة الجديدة للمزودين المنشورين
+        final snapshot = await FirebaseFirestore.instance
+            .collection(
+,
+      userPhone,
+    ); // إضافة هذا للتوافق مع ProviderMainScreen
+    await prefs.setString(
+,
+      });
+
+      // إنشاء مزود في مجموعة providers إذا لم يكن موجوداً
+      final providerRef = FirebaseFirestore.instance.collection(
+,
+    );
+
+    // قائمة المحافظات العراقية
+    final List<String> iraqGovernorates = [
+      
+,
+    );
+  }
+
+  List<Widget> get _pages {
+    if (widget.isAdmin) {
+      // صفحات مزود الخدمة
+      return [
+        ProviderDashboardNew(
+          providerId: _currentUserId ?? 
+, // العناصر تبدأ كمعلقة حتى يوافق المدير
+          
+, // تغيير من 
+, // تغيير من approved إلى active
+            
+, // جميع الخدمات تبدأ كمعلقة
+      };
+
+      print(
+, // يمكن إضافته لاحقاً إذا لزم الأمر
+          password: password,
+          accountType: _accountType ?? 
+, // يمكن تحديث هذا ليكون معرف المدير
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+, accountType);
+
+      // إجبار حفظ البيانات فوراً
+      await prefs.commit();
+
+      // التحقق من حفظ البيانات فوراً
+      final savedPhone = prefs.getString(
+, accountType);
+
+    // حفظ الجلسة في Firestore
+    await FirebaseFirestore.instance.collection(
+, isEqualTo: currentUserPhone) // فلترة حسب رقم مزود الخدمة
+                .orderBy(
+, isEqualTo: true) // فقط العناصر المعتمدة
+          .get();
+
+      print(
+, providerName);
+
+    // إجبار حفظ البيانات فوراً
+    await prefs.commit();
+
+    // التحقق من حفظ البيانات فوراً
+    final savedPhone = prefs.getString(
+.tr())));
+      }
+    }
+  }
+
+  // دالة إرسال طلب تجريبي
+  Future<void> _sendTestRequest() async {
+    try {
+      await FirebaseFirestore.instance.collection(
+.tr())));
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _updateStatistics() {
+    // حساب العناصر النشطة
+    _activeItems = _items.where((item) => item[
+.tr())),
+                  );
+                  return;
+                }
+
+                // إنشاء chatId فريد بين المستخدم ومزود الخدمة
+                final vendorId = 
+.tr())),
+        );
+        return;
+      }
+      
+      // التحقق من الموقع
+      if (_selectedLocation == null) {
+        print(
+.tr())),
+      );
+      return;
+    }
+
+    // ====== هل نوع الخدمة هو قاعة عرس؟ ======
+    print(
+.tr()),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        // حذف من provider_items
+        await FirebaseFirestore.instance
+            .collection(
+.tr()),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        // حذف العنصر من قاعدة البيانات
+        await FirebaseFirestore.instance
+            .collection(
+.tr()),
+          backgroundColor: Color(0xFF10B981),
+        ),
+      );
+
+      _loadProviderRequests(); // إعادة تحميل البيانات
+    } catch (e) {
+      print(
+.tr()),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // تحضير البيانات للتمرير إلى BookingScreen
+    final rawServiceType =
+        widget.item[
+/المزود من واجهة عرض العنصر للعميل حسب المطلوب
+                  const SizedBox(height: 24),
+
+                  // التفاصيل
+                  const Text(
+                    
+0 د.ع
+0.00 دينار
+100 شخص
+16 رقم للدفع الإلكتروني
+300 شخص
+5 صور على الأقل
+6 أشهر
+: 0,
+      };
+
+      // إرسال الطلب إلى مجموعة provider_requests
+      await FirebaseFirestore.instance
+          .collection(
+: <String>[],
+                  };
+                }
+
+                // إضافة الفترة المحجوبة إلى قائمة الفترات
+                (dateStatus[dateString][
+: <String>[]};
+        }
+
+        // لا تستبدل التواريخ المحجوبة
+        if (dateStatus[dateKey][
+: FieldValue.serverTimestamp(),
+
+        // بيانات القاعة المخصصة
+        
+: FieldValue.serverTimestamp(),
+          });
+
+      // إنشاء مزود الخدمة في القائمة المنشورة
+      final providerDocRef = FirebaseFirestore.instance
+          .collection(
+: FieldValue.serverTimestamp(),
+          });
+
+      // تحديث حالة الحساب في providers
+      await FirebaseFirestore.instance
+          .collection(
+: FieldValue.serverTimestamp(),
+      };
+
+      // تحديث البيانات في published_providers إذا كان موجوداً
+      final publishedDoc = await FirebaseFirestore.instance
+          .collection(
+: FieldValue.serverTimestamp(),
+      };
+
+      // حفظ معلومات الخدمة الكاملة في Firestore
+      await FirebaseFirestore.instance
+          .collection(
+: FieldValue.serverTimestamp(),
+    };
+
+    try {
+      // حفظ البيانات في مجموعة providers
+      await FirebaseFirestore.instance
+          .collection(
+: [imageUrl], // حفظ كمصفوفة
+            
+: _creditCardController.text.trim(),
+
+        // معلومات إضافية
+        
+: _getBasePrice().toString(), // استخدام السعر الصحيح
+            
+: _nameController.text.trim(), // اسم الخدمة التجاري
+      
+: _providerId, // استخدام رقم الهاتف كمعرف
+            
+: areaController.text,
+            });
+
+        Navigator.of(context).pop(); // إغلاق مؤشر التحميل
+
+        setState(() {
+          _userData![
+: businessName, // الاسم التجاري = اسم المزود
+      
+: collectionName, // المجموعة الداخلية
+          
+: correctProviderName});
+
+      // تحديث اسم المزود في جميع العناصر المنشورة
+      final itemsQuery = await FirebaseFirestore.instance
+          .collection(
+: existingItems, // العناصر القديمة
+        
+: finalProviderName, // اسم المستخدم فقط
+        
+: finalServiceName, // اسم الخدمة التجاري فقط
+        
+: hallDocumentId!, // استخدام document ID الفريد فقط
+            
+: imageUrl,
+      });
+
+      Navigator.of(context).pop(); // إغلاق مؤشر التحميل
+
+      setState(() {
+        _userData![
+: isRegisteredProvider,
+
+        // معلومات الطلب
+        
+: isRegisteredProvider, // علامة المزود المسجل
+        // معلومات إضافية
+        
+: item
+                                            .providerId, // سيكون نفس providerId لأنه رقم الهاتف
+                                        
+: itemId.toString(), // معرف فريد لكل عنصر
+      
+: itemPrice, // السعر الأساسي
+            
+: itemsToSave, // العناصر الجديدة
+        
+: longitude,
+
+        // معلومات الخدمة
+        
+: null,
+        // بيانات إضافية لقاعات الأعراس
+        
+: pricePerHour, // للتوافق
+        
+: providerId,
+
+        // معلومات الموقع
+        
+: providerId, // رقم الهاتف كمعرف
+        
+: requestData});
+      }
+
+      // البحث في مجموعة provider_services (المزودين المسجلين)
+      final providersSnapshot = await FirebaseFirestore.instance
+          .collection(
+: serviceName,
+      });
+
+      // حفظ العناصر في provider_items مباشرة بحالة 
+: serviceName, // استخدام الاسم العربي الصحيح
+          
+: serviceType, // استخدام النوع العربي الصحيح
+          
+: serviceType, // الاحتفاظ بالنوع العربي في الطلبات
+        
+: status});
+    
+    // إرسال إشعار للمستخدم عند تأكيد أو رفض الحجز
+    if (status == 
+: true,
+
+        // بيانات إضافية
+        
+: true,
+                // خصائص خاصة بالقاعة
+                
+: true,
+              };
+            }
+
+            // إضافة الفترات الزمنية المحجوبة جزئياً
+            for (var slotKey in blockedTimeSlots) {
+              final parts = slotKey.split(
+: true,
+            // خصائص خاصة بالقاعة
+            
+: true,
+          });
+
+      // حفظ البيانات في providers
+      await FirebaseFirestore.instance
+          .collection(
+: true,
+        });
+        // تحديث آخر دخول في Firestore
+        await userRef.update({
+: userPhone, // اسم المستخدم (رقم الهاتف)
+      
+: widget.providerName, // استخدام اسم المزود كقيمة افتراضية
+      
+: نعم
+;
+
+                          // إظهار أزرار التعديل والحذف للمزود فقط (وليس للزبائن)
+                          // التحقق من أن المستخدم هو مزود خدمة
+                          if (accountType == 
+;
+
+        // إذا كان الطلب معتمد، نحمل العناصر من مجموعة الخدمات
+        if (_requestStatus == 
+;
+
+        // تحقق من نوع الحجز
+        final isFullDayBooking = data[
+;
+
+      // التحقق من وجود المستند في published_providers
+      var doc = await FirebaseFirestore.instance
+          .collection(
+;
+
+      if (userPhone.isNotEmpty) {
+        // البحث في users أولاً باستخدام document ID
+        DocumentSnapshot userDoc = await FirebaseFirestore.instance
+            .collection(
+;
+
+    // التحقق من حقل status أولاً
+    if (status == 
+;
+
+    // فقط للتصوير نحسب حسب الساعات
+    if (category != 
+;
+
+// دالة لتحويل نوع الخدمة إلى معرف الخدمة
+String getServiceId(String serviceType) {
+  switch (serviceType) {
+    case 
+;
+            _isLoading = false;
+          });
+          return;
+        } else {
+          // إعادة تعيين العد بعد انتهاء الحظر
+          try {
+            await userRef.update({
+              
+;
+          // إظهار زر الإضافة للمزود فقط (وليس للزبائن)
+          if (accountType == 
+;
+          });
+          return;
+        }
+
+        // إذا لم يوجد في users، ابحث باستخدام phone field
+        final userQuery = await FirebaseFirestore.instance
+            .collection(
+;
+          });
+          return;
+        }
+
+        // إذا لم يوجد في أي مكان
+        setState(() {
+          userCreditCard = 
+;
+          });
+          return;
+        }
+
+        // البحث في customers كبديل
+        final customerQuery = await FirebaseFirestore.instance
+            .collection(
+;
+      if (userId == ownerPhone || userId == null) {
+        // تحقق إذا كان هذا هو المالك من خلال رقم الهاتف المحفوظ
+        final savedPhone = prefs.getString(
+;
+    _blockDate(date, timeSlot: timeSlot);
+  }
+
+  Future<void> _unblockTimeSlot(String slotKey) async {
+    try {
+      // تحديد المجموعة الصحيحة للتحديث
+      String collection = 
+;
+    final s = serviceName.toLowerCase();
+
+    // قاعات أعراس
+    if (s.contains(
+;
+    if (serviceType.isEmpty) {
+      // 3. التحقق من نوع الخدمة في _providerData
+      serviceType = _providerData?[
+;
+    }
+
+    // 5. التحقق من requestType في provider_requests
+    String requestType = _serviceData?[
+;
+    }
+
+    // إذا كان أي من الفحوصات يؤكد أنه مزود قاعة
+    return isHallProvider ||
+        providerType == 
+;
+    }
+
+    // إذا كانت السعة رقم فقط، أضف 
+;
+    }
+
+    // طباعة معلومات التتبع
+    print(
+;
+    }
+
+    final serviceNameLower = serviceName.toLowerCase();
+
+    // قاعات أعراس - أولوية عالية
+    if (serviceNameLower.contains(
+;
+    }
+
+    return serviceType; // إرجاع القيمة الأصلية إذا لم يتم التعرف عليها
+  }
+
+  // التحقق من أن الخدمة قابلة للحجز
+  bool _isBookableService() {
+    final raw = (widget.item[
+;
+    }
+    // بدلات رجالي - تحسين الكشف
+    else if (serviceNameLower.contains(
+;
+    }
+    // تأجير سيارات - تحسين الكشف
+    else if (serviceNameLower.contains(
+;
+    }
+    // تزيين سيارات
+    else if (serviceNameLower.contains(
+;
+    }
+    // شهر عسل
+    else if (serviceNameLower.contains(
+;
+    }
+    // صالونات تجميل
+    else if (serviceNameLower.contains(
+;
+    }
+    // فساتين زفاف
+    else if (serviceNameLower.contains(
+;
+    }
+    // فنادق
+    else if (serviceNameLower.contains(
+;
+    }
+    // كيك وحلويات
+    else if (serviceNameLower.contains(
+;
+    }
+    // مطاعم
+    else if (serviceNameLower.contains(
+;
+    }
+    // ورود وزهور
+    else if (serviceNameLower.contains(
+;
+  }
+
+  // تحديث الحالة في Firestore للعناصر الحالية لتصبح 
+; // إزالة الصفر وإضافة +964
+      } else {
+        phone = 
+; // اسم افتراضي محايد
+
+          // خريطة تحويل الأنواع الإنجليزية إلى العربية
+          Map<String, String> serviceTypeMapping = {
+            
+; // حالة العنصر: pending في البداية حتى يوافق المالك
+      itemData[
+; // رقم المالك/مزود الخدمة
+                final chatId = ChatUtils.createChatId(currentUserId, vendorId);
+
+                print(
+; // قيمة افتراضية محايدة
+          String actualServiceName = 
+?\nهذا الإجراء لا يمكن التراجع عنه.
+] = doc.id;
+
+          // تطبيع حالة العنصر: إذا كان معتمد من المالك اعتبره نشطاً
+          data[
+] = doc.id;
+            // العناصر المنشورة تعتبر نشطة
+            data[
+] = doc.id;
+          return data;
+        }).toList();
+
+        // تحديث الإحصائيات
+        _updateStatistics();
+
+        print(
+] = doc.id;
+          return data;
+        }).toList();
+
+        // تحميل الحجوزات
+        final bookingsSnapshot = await FirebaseFirestore.instance
+            .collection(
+] = doc.id;
+        return data;
+      }).toList();
+
+      // إثراء البيانات بجلب المحافظة والمنطقة من مجموعات مختلفة
+      print(
+] = doc.id;
+        return data;
+      }).toList();
+
+      // تحميل العناصر المراجعة
+      final reviewedSnapshot = await FirebaseFirestore.instance
+          .collection(
+] = doc.id;
+        return data;
+      }).toList();
+      // العناصر المعلقة
+      final pendingSnap = await FirebaseFirestore.instance
+          .collection(
+] = newStatus;
+      });
+
+      _loadProviderData();
+
+      // إشعار الزبون وتحديث مسار سريع للمزامنة على تطبيقه
+      try {
+        final customerId = (booking[
+] = requestId;
+
+        // محاولة تحديد إن كان المزود مسجلاً مسبقاً عبر published_providers
+        try {
+          final rawPhone =
+              requestData[
+] == true) {
+                      indicatorColor = Colors.red; // محجوز بالكامل
+                    } else if ((bookingInfo[
+] == true);
+    // سجلات لتشخيص السبب عند عدم ظهور الشارة
+    print(
+      
+] == true);
+  }
+
+  // دوال للحصول على لون ونص حالة العنصر
+  Color _getStatusColor(Map<String, dynamic> item) {
+    final status = _normalizeItemStatus(item);
+    if (status == 
+] ??
+                    providerDoc.id)
+                .toString();
+
+        // تجنب إضافة نفس المزود مرتين
+        if (addedProviders.contains(providerId)) {
+          print(
+] ?? 0).toDouble();
+    }
+    return total;
+  }
+
+  String _getCapacity() {
+    // محاولة الحصول على السعة من أماكن مختلفة
+    String? capacity;
+
+    // من hallData أولاً
+    if (fullProviderData[
+] ?? 0,
+
+          // الخدمات الضمنية - هذا هو الأهم!
+          
+] ?? 0,
+
+          // صور القاعة
+          
+] ?? 0} خدمة
+] ?? 0} د.ع
+] ?? 0} دينار
+] ?? []);
+          setState(() {
+            _unavailableDates = dates;
+          });
+        }
+        
+        // تحديث الأوقات المحجوزة
+        if (data.containsKey(
+] ?? [],
+
+          // نسخ hallData كاملة للحفاظ على جميع البيانات
+          
+] ?? [],
+            );
+
+            // إضافة التواريخ المحجوبة بالكامل إلى dateStatus
+            for (var dateString in blockedDates) {
+              dateStatus[dateString] = {
+                
+] ?? [];
+        }
+
+        // التحقق من وجود بيانات في published_providers لتحديد إذا كان مزود مسجل
+        final publishedDoc = await FirebaseFirestore.instance
+            .collection(
+] ?? [];
+      }
+
+      // التحقق من كون المزود مسجلاً
+      final publishedDoc = await FirebaseFirestore.instance
+          .collection(
+] ?? [];
+    }
+
+    // إذا لم توجد في hallData، جرب مباشرة من fullProviderData
+    if (includedServices.isEmpty) {
+      includedServices = fullProviderData[
+] ?? false;
+
+        if (!isCancelled) {
+          // حسب الشهر
+          final monthKey = DateFormat(
+] ?? providerPhone;
+    // المحافظة
+    final userGovernorate =
+        requestData[
+] ?? serviceType;
+
+      // تحويل من الإنجليزية إلى العربية إذا لزم الأمر
+      Map<String, String> englishToArabicMapping = {
+        
+] as List).length} عنصر قديم
+] as List<Map<String, dynamic>>;
+
+    // إحصائيات العناصر
+    final pendingItems = items
+        .where((item) => item[
+] as List<Map<String, dynamic>>;
+    // تحديد إذا كان المزود مسجلاً/موافقاً عليه مسبقاً
+    final bool isRegisteredProvider =
+        (providerData[
+] as List<dynamic>? ?? [];
+
+    // اسم الخدمة هو الاسم التجاري المعروض
+    final businessName = isHallProvider
+        ? (requestData[
+] as List<dynamic>?)?.length ?? 0
+        : items.length;
+
+    // تحديد ما إذا كان الطلب جديداً (خلال آخر 24 ساعة)
+    bool isNew = false;
+    DateTime? requestDate;
+    if (requestData[
+] as String?;
+
+          // فلترة حسب النوع المطلوب
+          if (userType == 
+] as Timestamp?;
+        
+        // تحليل العناصر
+        if (itemId != null) {
+          itemCounts[itemId] = (itemCounts[itemId] ?? 0) + 1;
+        } else {
+          suspicious.add({
+            
+] as double),
+        ),
+      };
+
+      // حفظ البيانات في provider_requests للموافقة من الإدارة
+      await FirebaseFirestore.instance
+          .collection(
+])
+            .delete();
+
+        // حذف الصورة من التخزين إذا كانت موجودة
+        if (item[
+])
+          .set(hallData);
+
+      // حفظ البيانات في provider_services مع حالة معلق
+      await FirebaseFirestore.instance
+          .collection(
+])
+          ?.toString();
+      if (cid == null || cid.isEmpty) return;
+
+      // المحاولة أولاً في users
+      final usersDoc = await FirebaseFirestore.instance
+          .collection(
+]));
+    }
+
+    // إزالة الصور المكررة والفارغة
+    images = images.where((img) => img.isNotEmpty).toSet().toList();
+
+    print(
+]);
+    }
+    // إذا كان يحتوي على صورة واحدة فقط
+    else if (widget.item[
+],
+
+        // العناصر
+        
+],
+
+        // معلومات إضافية
+        
+],
+
+        // معلومات الاتصال
+        
+],
+
+        // معلومات الخدمة
+        
+],
+
+        // معلومات الخدمة (اسم الخدمة التجاري المدخل من المزود)
+        
+],
+
+        // معلومات المزود
+        
+],
+            ],
+
+        // الصور
+        
+],
+        // صورة الخدمة فقط (بدون أي fallback غير احترافي)
+        
+],
+        });
+      }
+
+      // جلب المعلومات الكاملة من نفس المصدر (users + provider_services)
+      final providerId =
+          widget.serviceData[
+],
+      };
+
+      // إضافة بيانات خاصة بقاعات الأعراس
+      if (isHallProvider) {
+        // نسخ جميع بيانات القاعة من hallData إذا كانت موجودة
+        Map<String, dynamic> hallData = requestData[
+].isNotEmpty),
+      };
+
+      // حفظ الطلب في Firestore
+      final docRef = await FirebaseFirestore.instance
+          .collection(
+].toString().trim();
+      }
+      // إذا كان finalServiceName يساوي اسم المستخدم أو رقم الهاتف أو فارغ، اجعله 
+].toString();
+      }
+    }
+
+    // استخراج الوقت من timeSlot
+    if (booking[
+];
+
+        // إنشاء رابط خرائط جوجل
+        String googleMapsUrl =
+            
+];
+
+        // تحد يث الحالة المحلية لعرض فوري
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      print(
+];
+
+      // الحصول على معلومات المزود
+      final providerDoc = await FirebaseFirestore.instance
+          .collection(
+];
+
+      if (providerId != null) {
+        // البحث في users أولاً
+        final userDoc = await FirebaseFirestore.instance
+            .collection(
+];
+
+    // إذا كان المستخدم الآخر مزود خدمة ويوجد اسم خدمة، اعرض اسم الخدمة
+    if (otherUserRole == 
+];
+                found = true;
+              }
+            }
+          }
+
+          // 3) لو لم يُعثر، اتركها False مع طباعة لمساعدتنا بالتشخيص
+          requestData[
+];
+        if (priceValue != null) {
+          itemPrice = priceValue.toString();
+          // إضافة العملة إذا لم تكن موجودة
+          if (!itemPrice.contains(
+];
+        }
+      }
+
+      // الحصول على providerId
+      final providerId =
+          widget.providerData[
+];
+      // استخراج معرف المزود مع إعطاء الأولوية للحقل الصحيح
+      final providerId =
+          requestData[
+];
+      // العناصر المعتمدة
+      final itemsSnap = await FirebaseFirestore.instance
+          .collection(
+]?.toString();
+    }
+
+    // إذا لم توجد بعد، استخدم قيمة افتراضية
+    if (capacity == null || capacity.isEmpty) {
+      return 
+]?.toString();
+    }
+
+    // إذا لم توجد، جرب من fullProviderData مباشرة
+    if (capacity == null || capacity.isEmpty) {
+      capacity = fullProviderData[
+]];
+    }
+    // صورة افتراضية إذا لم توجد صور
+    return [
+]} - التاريخ: ${bookingData[
+]} - حالة: ${itemData[
+]} - لمزود: ${data[
+]} د.ع
+]} دينار
+]} دينار عراقي
+]} ساعة
+]} في مجموعة $category
+]},
+          )
+          .toList();
+
+      // إعداد بيانات القاعة الكاملة
+      Map<String, dynamic> hallData = {
+        
+]}, المنطقة=${_providerData![
+]}, بطاقة=${_providerData![
+]}\nالمكان: ${widget.item[
+} د.ع
+} دينار
+} دينار عراقي
+});
+                              // تحديث حالة الخدمة إلى موافقة (نشر الخدمة)
+                              if (booking.containsKey(
+؟\n\nسيتم حذف العنصر نهائياً.
+؟\n\nسيصبح العنصر مرئياً للعملاء.
+؟\nلا يمكن التراجع عن هذا الإجراء.
+أبريل
+أدخل اسم المنطقة
+أدخل اسم قاعة الأعراس
+أدخل اسمك الكامل
+أدخل سبب رفض هذا الطلب...
+أدخل سبب رفض هذا العنصر...
+أدخل وصف مفصل للقاعة ومميزاتها
+أذونات الموقع مرفوضة بشكل دائم
+أربعاء
+أربيل
+أضف أي تفاصيل إضافية (اختياري)
+أضف أي ملاحظات أو تفاصيل إضافية للحجز...
+أغسطس
+أكتوبر
+أمس
+أهلاً بك في تطبيق زفة
+أهلاً وسهلاً
+أيام محجوبة بالكامل:
+إجابات للأسئلة المتكررة
+إجراءات الإدارة
+إجمالي الإيرادات
+إجمالي الحجوزات: ${bookedDates.length}
+إجمالي قيمة الخدمات الضمنية
+إدارة التواريخ
+إدارة حجوزات ${day.day}/${day.month}/${day.year}
+إدارة قاعة الأعراس
+إرسال الطلب للإدارة
+إرسال الطلب للمالك
+إرسال للموافقة
+إضاءة احترافية
+إضافة
+إضافة العنصر
+إضافة حجز جديد:
+إضافة خدمة
+إضافة خدمة جديدة
+إضافة صورة
+إضافة عناصر الخدمة
+إظهار
+إظهار الموقع على الخريطة
+إعادة تعيين تاريخ يوم العرس
+إقامة
+إلغاء حجز اليوم كاملاً
+إلى الساعة:
+إنشاء حساب مزود الخدمة
+إيرادات هذا الشهر
+إيصال الدفع
+إيصال الدفع مطلوب
+إيصال الدفع:
+ابدأ المحادثة
+ابدأ المحادثة بإرسال رسالة
+ابدأ بإضافة خدماتك المفضلة
+ابدأ بإضافة عناصر لخدماتك
+ابدأ بإضافة عناصر لخدمتك
+ابدأ بحجز خدماتك المفضلة
+ابدأ بحجز خدمة من الصفحة الرئيسية
+اثنين
+احصل على باقات متكاملة تشمل جميع خدمات العرس بأسعار رمزية
+اختر الخدمات الضمنية التي تقدمها القاعة وحدد أسعارها:
+اختر تاريخ الحجز:
+اختر تاريخاً جديداً
+اختر كلمة مرور قوية ولا تشاركها مع أي شخص.
+اختر وقت البدء
+اختر وقت البداية
+اختر وقت النهاية
+اختر يوماً متاحاً للحجز
+اختيار التاريخ والوقت
+اختيار الصور
+اختيار الوقت
+اختيار صورة
+اختيار صورة الإيصال
+اختيار موقع القاعة
+اختيار وقت محدد
+اربيل
+ارفع صورة إيصال الدفع
+اسم الخدمة
+اسم الخدمة *
+اسم الخدمة غير محدد
+اسم الزبون: ${booking[
+اسم القاعة
+اسم القاعة مطلوب
+اسم المحافظة
+اسم المستخدم
+اسم مزود الخدمة
+اضغط على 
+اضغط على أي عنصر لعرض التفاصيل الكاملة والحجز
+اضغط على أي يوم لتحديده كمحجوز أو لإلغاء الحجز
+اضغط على الخريطة لاختيار موقع القاعة
+اضغط على الخريطة لتحديد موقع خدمتك
+اضغط على الصورة للتكبير
+اضغط على المكان المطلوب على الخريطة لتحديد موقع خدمتك
+اضغط على زر 
+اضغط لاختيار الصور
+اضغط لتغيير الصور
+اضغط للمراجعة
+اعراس
+اكتب السبب هنا...
+اكتب رسالة...
+اكتب وصفاً شاملاً للخدمات التي تقدمها...\n\nمثال:\n- تصوير فوتوغرافي احترافي\n- تصوير فيديو سينمائي 4K\n- مونتاج احترافي\n- ألبوم رقمي\n- طباعة الصور
+الأحد
+الأربعاء
+الأسئلة الشائعة
+الأنبار
+الأنشطة
+الأيام الأكثر حجزاً
+الأيام المحجوزة: ${bookedDates.map((b) => b.split(
+الإثنين
+الإحداثيات: $lat, $lng
+الإشعارات
+الإنجليزية
+الاتصال بنا
+الاثنين
+الاسم التجاري
+الاسم الكامل
+الاسم: ${widget.providerData[
+الاسم: ${widget.userName}
+الانبار
+البحث في الخدمات...
+البصرة
+البطاقة الائتمانية: ${widget.providerData[
+التاريخ الجديد: ${DateFormat(
+التاريخ والوقت
+التاريخ: $date
+التاريخ: ${DateFormat(
+التاريخ: ${booking[
+التاريخ: ${selectedDay.day}/${selectedDay.month}/${selectedDay.year}
+التحقق من رقم الهاتف
+التصوير
+التصوير الفوتوغرافي
+التفاصيل
+التفاصيل:
+التفاصيل: ${e.toString()}
+التقارير
+التقارير والإحصائيات
+الثلاثاء
+الجمعة
+الحالة
+الحالة: 
+الحالة: ${booking[
+الحالة: ${item[
+الحالة: ${status == 
+الحجز الحالي:
+الحجز ملغي
+الحجوزات (${_bookings.length})
+الحجوزات الأخيرة
+الحجوزات الحالية:
+الحجوزات الشهرية
+الحجوزات الملغاة
+الحجوزات حسب العنصر
+الحجوزات حسب اليوم
+الحد الأدنى: 5 صور
+الخدمات الأكثر طلباً
+الخدمات الضمنية
+الخدمات الضمنية (${includedServices.length})
+الخدمات الضمنية المتاحة
+الخدمات الضمنية المتوفرة
+الخدمات المقدمة:
+الخدمة
+الخطأ: ${snapshot.error}
+الخميس
+الدعم
+الديوانية
+الرئيسية
+الرسائل
+الزبون
+الزبون: ${booking.customerName}
+الزبون: ${booking[
+الزهور
+السبت
+السعة
+السعة أو الكمية
+السعة/الكمية
+السعة:
+السعر (د.ع)
+السعر (دينار عراقي)
+السعر (دينار) *
+السعر الأساسي
+السعر الأساسي (دينار)
+السعر الأساسي للقاعة (لا يشمل الخدمات الضمنية)
+السعر الأساسي مطلوب
+السعر بالدينار العراقي
+السعر غير محدد
+السعر للساعة
+السعر للساعة الواحدة
+السعر يجب أن يكون أكبر من صفر
+السعر/ساعة
+السعر:
+السعر: 
+السعر: $price د.ع
+السعر: ${item[
+السعر: ${price.toStringAsFixed(0)} د.ع
+السليمانية
+السيارات
+الصفحة الرئيسية
+الصفحة الرئيسية لمزود الخدمة
+الصور
+الصور المرفقة:
+الطلبات
+العروض قيد التحضير وستتوفر قريباً
+العميل
+العميل: ${bookingData[
+العميل: ${booking[
+العناصر
+العناصر الجديدة المطلوب إضافتها
+العناصر الجديدة المعلقة:
+العناصر الخاصة بك
+العناصر السابقة:
+العناصر الموجودة (قديمة)
+العناصر النشطة
+العناية والتجميل
+العنصر: ${booking.itemName}
+العنوان *
+العودة
+الفئة
+الفترة المحجوزة: من $fromHour $fromPeriod إلى $toHour $toPeriod
+الفنادق
+القادسية
+الكيك
+المبلغ الإجمالي:
+المبلغ المستحق:
+المبلغ: ${booking[
+المثنى
+المحادثة
+المحادثة المباشرة
+المحادثة موجودة بالفعل
+المحافظة *
+المحافظة: ${widget.providerData[
+المحافظة: ${widget.userGovernorate}
+المرفوضة
+المزود
+المستخدم الحالي
+المطاعم
+المعلومات الشخصية
+المكان
+الملاحظات
+المنطقة 
+المنطقة: ${widget.providerData[
+المواعيد
+الموافق عليها
+الموقع المحدد
+الموقع المحدد:
+الموقع المختار
+الموقع المختار: ${_selectedLocation!.latitude.toStringAsFixed(4)}, ${_selectedLocation!.longitude.toStringAsFixed(4)}
+الموقع على الخريطة
+الموقع متاح على الخريطة
+الموقع: ${booking[
+النجف
+النشاطات الأخيرة
+النوع
+الهاتف
+الهاتف: $providerPhone
+الهاتف: ${booking[
+الهاتف: ${widget.userPhone}
+الورود والزينة
+الوصف يجب أن يكون 50 حرف على الأقل
+الوصف: ${item[
+الوقت المتبقي:
+الوقت المطلوب: من $fromHour $fromPeriod إلى $toHour $toPeriod
+الوقت: $time
+الوقت: $timeSlot
+اليوم كامل
+اليوم كامل محجوز
+اليوم كاملاً
+اليوم متاح بالكامل للحجز
+املأ بيانات العنصر بالتفصيل
+انتهت مهلة تحديد الموقع
+انقر على 
+انقر على أي تاريخ لإدارة الحجوزات. يمكنك حجز اليوم كاملاً أو أوقات محددة. التواريخ المحجوزة تظهر بنقطة حمراء.
+انقر على الأيام لإدارة الحجوزات (يوم كامل أو أوقات محددة)
+انقر على الأيام لتحديدها كمحجوزة أو متاحة
+انقر على التاريخ لعرض الحجوزات
+بابل
+بانتظار التأكيد
+بدء رفع البيانات...
+بدء محادثة الدعم
+بدل
+بدل الرجال
+بدلات
+بدلات رجالي
+بدلات رجالية
+بدلة
+بدلة العريس
+بدلة رجالي
+بدون itemId
+بدون اسم
+بدون موقع
+بدون وصف
+بطاقة الائتمان
+بغداد
+بوكيه
+بوكيه الورد
+بيانات الدفع المسجلة في حسابك
+بيانات المزود غير موجودة
+بيانات المزود: ${widget.providerData}
+بيانات ناقصة
+تأجير
+تأجير السيارات
+تأجير سيارات
+تأكيد الإلغاء
+تاجير
+تاجير السيارات
+تاريخ إنشاء: ${_formatDateTime(booking[
+تاريخ الإضافة
+تاريخ الإضافة: ${createdAt.toDate().day}/${createdAt.toDate().month}/${createdAt.toDate().year}
+تاريخ الإلغاء
+تاريخ الإنشاء
+تاريخ التسجيل: ${_formatDate(providerData[
+تاريخ الحجز قد مضى
+تاريخ الحجز: ${_formatDateOnly(booking[
+تاريخ الطلب: ${_formatDate(timestamp.toDate())}
+تاريخ غير صالح
+تثبيت الحجز
+تجميل
+تحتاج إلى ${5 - _hallImages.length} صورة إضافية
+تحدث مع فريق الدعم
+تحديث
+تحديث العنصر
+تحديث القائمة
+تحديث الموقع
+تحديد الأوقات المحجوزة
+تحديد الموقع على الخريطة
+تحديد موقعي الحالي
+تزيين
+تزيين السيارات
+تزيين السيارة
+تسجيل الخدمة
+تسجيل خدمة التصوير
+تسجيل قاعة أعراس
+تسجيل قاعة الأعراس
+تسجيل معلومات الخدمة
+تشمل القاعة الخدمات التالية:
+تصوير
+تضارب في الموعد
+تعديل الخدمة
+تعديل عنصر
+تعذر إتمام الحجز
+تعذر بدء التحقق: $e
+تغيير الصور
+تغيير الصور (${_selectedImages.length})
+تغيير الصورة
+تغيير لغة التطبيق
+تفاصيل الحجوزات
+تفاصيل الخدمة
+تفاصيل السعر
+تفاصيل الطلب: ${booking[
+تفاصيل العنصر: ${itemData[
+تفاصيل القاعة
+تفاصيل خدمة التصوير
+تفاصيل مزود الخدمة والعنصر
+تفاصيل من العميل
+تقويم الحجوزات
+تكييف مركزي
+تم ${rating.isVisible ? 
+تم إرسال الطلب بنجاح! سيتم مراجعته من قبل الإدارة
+تم إرسال حجزك إلى مزود الخدمة وسيتم التواصل معك قريباً لتأكيد التفاصيل.
+تم إرسال طلب ${(_selectedServiceType == 
+تم إضافة عنصر جديد
+تم إنشاء محادثة جديدة
+تم اختيار ${_hallImages.length} صورة
+تم اختيار ${_selectedImages.length} صورة ✓
+تم اختيار صورة
+تم الاختيار
+تم التأكيد
+تم التسجيل بنجاح!
+تم التقييم
+تم العثور على ${bookingsSnapshot.docs.length} حجز، منها ${suspicious.length} حجز مشبوه
+تم تأكيد الحجز ليوم ${selectedDay.day}/${selectedDay.month}/${selectedDay.year}\n
+تم تأكيد حجزك!
+تم تثبيت الحجز بنجاح!
+تم تحديث البيانات بنجاح
+تم تحديث السعر
+تم تحديد الموقع
+تم تحديد الموقع بنجاح
+تم تحديد الموقع بنجاح ✓
+تم تحديد اليوم كمتاح
+تم تحديد اليوم كمحجوز
+تم تحميل ${_items.length} عنصر
+تم تحميل ${_pendingItems.length} عنصر معلق و ${_reviewedItems.length} عنصر مراجع
+تم تحميل بيانات الخدمة: ${_serviceData?[
+تم تحميل بيانات مزود الخدمة: ${_providerData?[
+تم تحميل معرف المستخدم للمفضلات: $storedUserId
+تم تحميل معرف المستخدم: $storedUserId
+تم تسجيل خدمة التصوير بنجاح. سيتمكن العملاء الآن من رؤية خدمتك والحجز بعد موافقة المالك.
+تم تعطيل الإشعارات
+تم تفعيل الإشعارات
+تم حجب الفترة $timeSlot في ${DateFormat(
+تم حجب تاريخ ${DateFormat(
+تم حذف جميع الحجوزات بنجاح!
+تم حفظ البيانات بنجاح. معرف الوثيقة: ${docRef.id}
+تم حفظ الجلسة بعد تسجيل الدخول في Firestore فقط: $phone
+تم رفض 
+تم رفض العنصر من قبل الإدارة
+تم رفض حجزك
+تم رفض صلاحيات الموقع
+تم رفع الصورة $j بنجاح: $downloadUrl
+تم قبول 
+تم قبول الحجز
+تم قبول الطلب
+تم قبول حجز جديد
+تم معالجة العنصر $i بنجاح
+تمت الموافقة
+تمت الموافقة على 
+تمت الموافقة على الطلب من قبل الإدارة
+تمت الموافقة على العنصر من قبل الإدارة
+تمت الموافقة من قبل الإدارة
+تمت الموافقة ونشر الخدمة بنجاح!
+تواصل مع مزود الخدمة
+تواصل معنا للحصول على المساعدة
+تواصل معنا مباشرة - متاح 24/7
+ثلاثاء
+جاري التثبيت...
+جاري الحجز...
+جاري تحديد الموقع...
+جاري تحليل بيانات الحجوزات...
+جاري تحميل البيانات...
+جاري تحميل بياناتك...
+جاري حذف الحجوزات المشبوهة...
+جاري حذف جميع الحجوزات...
+جاري حفظ البيانات...
+جديد
+جرب كلمات بحث مختلفة
+جعل اليوم متاحاً بالكامل
+جلسات تصوير
+جمعة
+جميع العناصر الجديدة تم مراجعتها
+حالة التحليل
+حالة التوفر
+حالة الطلب: 
+حجز
+حجز ${widget.itemName}
+حجز آخر
+حجز اليوم كامل
+حجز اليوم كاملاً
+حجز جديد
+حجز جزئي - فترات محجوزة:
+حجز في نهاية الأسبوع
+حجز نشط ومؤكد
+حجز يوم كامل
+حجوزات ${_selectedDay.day}/${_selectedDay.month}/${_selectedDay.year}
+حجوزات مؤكدة
+حجوزات معلقة
+حجوزات مُعالجة (قبول/رفض)
+حدث خطأ أثناء اختيار الصور: $e
+حدث خطأ أثناء تثبيت الحجز. يرجى المحاولة مرة أخرى.\nالخطأ: $e
+حدث خطأ أثناء تحميل الحجوزات. تأكد من وجود الحقل createdAt في كل حجز أو تحقق من اتصال الإنترنت.\n${snapshot.error}
+حدث خطأ أثناء تسجيل الدخول.
+حدث خطأ أثناء حفظ البيانات: $e
+حدث خطأ في التحقق من بيانات مزود الخدمة. يرجى المحاولة مرة أخرى.
+حدث خطأ في تحميل البيانات
+حدث خطأ في تحميل الحجوزات
+حدث خطأ في تسجيل الدخول. يرجى المحاولة مرة أخرى.
+حدد الفترة الزمنية المحجوزة:
+حدد الوقت المطلوب للحجز:
+حدد الوقت المناسب للحجز
+حذف الحجوزات المشبوهة
+حذف جميع الحجوزات
+حسنًا
+حفظ البيانات في Firestore...
+حفظ التعديلات
+حفظ التغييرات
+حفظ العنصر
+حلويات
+خدمات عامة
+خدمات متاحة
+خدمة
+خدمة أخرى
+خدمة الأمن والحراسة
+خدمة الإضاءة المتقدمة
+خدمة التصوير
+خدمة التصوير - ${widget.providerName}
+خدمة التصوير الفوتوغرافي
+خدمة التصوير بالفيديو
+خدمة التكييف والتهوية
+خدمة السيارة
+خدمة الطعام والضيافة
+خدمة الفندق
+خدمة الموسيقى والدي جي
+خدمة الموقع غير مفعلة
+خدمة تجريبية
+خدمة تصوير احترافية تشمل:\n\n• تصوير فوتوغرافي عالي الجودة\n• تصوير فيديو سينمائي\n• طاقم محترف\n• معدات حديثة\n• مونتاج احترافي\n• ألبوم رقمي\n• توصيل سريع للصور
+خدمة تنسيق الورود والزينة
+خدمة تنظيف ما بعد الحفل
+خدمة طعام
+خدمة عادية
+خدمة عامة
+خدمة غير محددة
+خدمة غير معروفة
+خدمة مواقف السيارات
+خدمة: $serviceName
+خدمة: ${providerData[
+خدمة: ${widget.serviceData[
+خدمتك
+خط الطول: ${_currentLocation!.longitude.toStringAsFixed(6)}
+خط الطول: ${_selectedLocation!.longitude.toStringAsFixed(4)}
+خط الطول: ${_selectedLocation!.longitude.toStringAsFixed(6)}
+خط العرض: ${_currentLocation!.latitude.toStringAsFixed(6)}
+خط العرض: ${_selectedLocation!.latitude.toStringAsFixed(4)}
+خط العرض: ${_selectedLocation!.latitude.toStringAsFixed(6)}
+خطأ عام في تسجيل الدخول: $e
+خطأ في إرسال الطلب: $e
+خطأ في إعادة تعيين العد: $e
+خطأ في إعادة تعيين محاولات فاشلة: $e
+خطأ في الأوقات
+خطأ في البيانات
+خطأ في التحقق من المستخدم: $e
+خطأ في التحقق من صحة المزود
+خطأ في التحقق: $e
+خطأ في التحليل: $e
+خطأ في التحميل
+خطأ في تحديث الأوقات: $e
+خطأ في تحديث البيانات: $e
+خطأ في تحديث حالة الجلسة: $e
+خطأ في تحديث محاولات فاشلة: $e
+خطأ في تحديد الموقع
+خطأ في تحديد الموقع: $e
+خطأ في تحميل أعداد الخدمات: $e
+خطأ في تحميل اسم المزود: $e
+خطأ في تحميل الأوقات المحجوزة: $e
+خطأ في تحميل الإحصائيات: $e
+خطأ في تحميل التواريخ المحجوزة: $e
+خطأ في تحميل الحجوزات
+خطأ في تحميل العناصر المعتمدة: $e
+خطأ في تحميل العناصر: $e
+خطأ في تحميل بيانات المزود: $e
+خطأ في تحميل بيانات المستخدم: $e
+خطأ في تحميل حالة الحجوزات: $e
+خطأ في تحميل رقم بطاقة المزود: $e
+خطأ في تحميل معرف المزود: $e
+خطأ في تحميل معرف المستخدم: $e
+خطأ في تسجيل محاولة الدخول: $e
+خطأ في جلب البيانات من $serviceType: $e
+خطأ في جلب العناصر القديمة: $e
+خطأ في جلب بيانات التصوير: $e
+خطأ في جلب بيانات القاعة: $e
+خطأ في حذف الأوقات: $e
+خطأ في حذف الجلسة: $e
+خطأ في حذف الصورة: $e
+خطأ في حفظ الجلسة: $e
+خطأ في حفظ بيانات التسجيل: $e
+خطأ في حفظ بيانات مزود الخدمة: $e
+خطأ في حفظ توكن الجهاز: $e
+خطأ في رفع الصورة $i: $e
+خطأ في رفع الصورة: $e
+خطأ في فتح الموقع: $e
+خميس
+خيارات إضافية
+دهوك
+ديالى
+ديسمبر
+دينار
+ذي قار
+رجالي
+رجالية
+رفع الصورة $j للعنصر $i...
+رقم التواصل
+رقم الهاتف غير مسجل
+رقم الهاتف مسجل مسبقًا
+رقم الهاتف: ${booking[
+رقم بطاقة الائتمان
+رقم بطاقة الائتمان 
+رقم بطاقة الائتمان (مزود الخدمة)
+رقم بطاقة الائتمان غير صحيح
+رمز التحقق (OTP)
+رمز غير صحيح
+زفاف
+زفة
+زهرة
+زهور
+زينة سيارات
+سبب الرفض
+سبب الرفض:
+سبب رفض 
+سبت
+سبتمبر
+ستظهر الحجوزات الجديدة هنا
+ستظهر حجوزات العملاء هنا
+ستظهر عناصرك هنا بعد الموافقة عليها
+ستظهر هنا الحجوزات الخاصة بك
+ستظهر هنا قائمة بجميع حجوزاتك السابقة والحالية
+سجّل دخولك أو أنشئ حساب جديد للمتابعة
+سعة القاعة
+سعة القاعة مطلوبة
+سعر الساعة الواحدة:
+سعر العنصر (دينار)
+سليمانية
+سنة
+سياحة
+سيار
+سيارات
+سيارة
+سيتم إرجاع هذا التاريخ إلى حالة 
+سيتم إرسال رمز تحقق إلى: ${widget.phoneNumber}
+سيتم إضافة تقويم الحجوزات قريباً
+سيتم التواصل معك قريباً من قبل مزود الخدمة لتأكيد تفاصيل الحجز
+سيتم حذف جميع الحجوزات المقبولة أو المرفوضة. هل أنت متأكد؟
+سيتم عرض الخدمات هنا بمجرد إضافتها من قبل مزود الخدمة
+سيتم عرض الخدمات هنا بمجرد موافقة الإدارة عليها
+سيتم مراجعة طلبك من قبل الإدارة وستصلك رسالة عند الموافقة على تسجيل القاعة
+سيتم مراجعته من قبل الإدارة وستصلك رسالة تأكيد عند الموافقة.
+سيرى العملاء حالة 
+سيظهر مزودو الخدمة عند إضافة عناصر معتمدة
+شركة سياحة
+شهر العسل
+شهر العسل والسياحة
+شهر عسل
+صال
+صالة
+صالون
+صالون وعناية
+صالونات تجميل
+صباحاً
+صلاح الدين
+صلاحيات الموقع مرفوضة بشكل دائم
+صور الخدمة
+صور الخدمة (3 صور على الأقل)
+صور الخدمة (إضافية)
+صور العنصر (3 صور على الأقل)
+صور القاعة
+صور القاعة (${hallImages.length})
+صور غير كافية
+صورة الخدمة
+صورة الخدمة:
+طعام
+طلب جديد - عدد العناصر: $totalItems
+طلب عنصر جديد
+طلب من: $providerName
+طلبك قيد المراجعة. لا يمكنك إعادة إرسال الطلب أثناء انتظار الموافقة.
+طوال اليوم
+عامة
+عدد الأشخاص
+عدد الساعات المحجوزة:
+عدد الساعات: ${booking[
+عدد الضيوف (السعة)
+عدد العناصر
+عدد العناصر النشطة
+عدد العناصر: ${items.length}
+عذراً، هذا التاريخ/الوقت تم حجزه من مستخدم آخر. يرجى اختيار تاريخ آخر.
+عرس
+عرض الحجوزات
+عرض تقويم العملاء
+عرض والموافقة على الطلبات الجديدة
+عروس
+عروض جاهزة للأعراس
+عريس
+عسل
+عميل
+عميل غير محدد
+عناصر $providerName
+عناصر ${widget.serviceName}
+عناصر الخدمة
+عناصر الخدمة المعتمدة:
+عناصر الخدمة:
+عناصر الطلب
+عناصر بانتظار الموافقة:
+عناصري
+عناصري (${_items.length})
+عناي
+عناية
+عناية العروس
+عنصر بدون اسم
+عنصر تجريبي
+عنصر غير محدد
+عنصر قديم
+عنصر معلق
+عنصر: ${bookingData[
+عنصر: ${item[
+غير متوفر
+غير متوفر حالياً
+غير معروف
+فبراير
+فترات محجوبة جزئياً:
+فترة محددة
+فساتين
+فساتين العروس
+فساتين زفاف
+فست
+فستان
+فستان الزفاف
+فستان العروس
+فشل التحقق التلقائي: $e
+فشل التحقق من رقم الهاتف
+فشل تحميل الصورة
+فشل تسجيل الدخول: $e
+فشل رفع الصورة $j للعنصر $i: $e
+فشل في رفع صورة الإيصال: $e
+فناد
+فنادق
+فند
+فندق
+في انتظار المراجعة
+في انتظار الموافقة
+فيديو
+قاعات
+قاعات أعراس
+قاعات اعراس
+قاعات الأعراس
+قاعات الأعراس لا تحتاج إلى عناصر منفصلة. بيانات قاعتك متاحة مباشرة للعملاء.
+قاعة
+قاعة أعراس
+قاعة الأعراس
+قاعة العرس
+قاعة عرس
+قام ${_providerData?[
+قم بإضافة عناصر جديدة لخدماتك
+قم بتحديث معلوماتك الشخصية
+قيد المراجعة
+قيد المراجعة (${_pendingItems.length})
+قيد المراجعة - في انتظار موافقة الإدارة
+قيد المعالجة
+كام
+كربلاء
+كركوك
+كشف الحساب
+كلمة المرور غير صحيحة
+كلمة المرور يجب أن تكون 8 أحرف على الأقل وتحتوي على حرف كبير وصغير ورقم ورمز.
+كيك
+كيك الزفاف
+لا تملك حسابًا؟ سجل الآن
+لا توجد بيانات الأيام
+لا توجد بيانات الخدمات
+لا توجد بيانات خدمة لمزود الخدمة: $_providerId
+لا توجد بيانات للعرض
+لا توجد تفاصيل متاحة
+لا توجد تقييمات بعد
+لا توجد تواريخ أو فترات محجوبة
+لا توجد حجوزات
+لا توجد حجوزات بعد
+لا توجد حجوزات بعد.
+لا توجد حجوزات في هذا اليوم
+لا توجد حجوزات معلقة
+لا توجد حجوزات ملغاة
+لا توجد حجوزات نشطة
+لا توجد خدمات ضمنية
+لا توجد خدمات متاحة حالياً
+لا توجد رسائل
+لا توجد رسائل بعد
+لا توجد صور متاحة
+لا توجد صورة
+لا توجد طلبات حالياً
+لا توجد عناصر حالياً
+لا توجد عناصر في انتظار المراجعة
+لا توجد عناصر في انتظار الموافقة
+لا توجد عناصر في هذا الطلب
+لا توجد عناصر لهذا المزود
+لا توجد عناصر متاحة
+لا توجد عناصر مراجعة بعد
+لا توجد عناصر مضافة
+لا توجد محادثات مع الزبائن
+لا توجد محادثات مع المزودين
+لا توجد مفضلات بعد
+لا يمكن الحجز في تاريخ سابق. يرجى اختيار تاريخ اليوم أو تاريخ مستقبلي.
+لا يمكن حجز هذا العنصر في الوقت الحالي. يمكنك تصفح عناصر أخرى أو التواصل مع مزود الخدمة للاستفسار.
+لا يوجد رقم هاتف محفوظ
+لا يوجد مزودو خدمة متاحون حالياً
+لا يوجد وصف
+لديك حساب بالفعل؟ تسجيل الدخول
+لم تتم إضافة أي عناصر بعد
+لم يتم إضافة أي عنصر بعد
+لم يتم اختيار صورة
+لم يتم العثور على بيانات الخدمة
+لم يتم العثور على بيانات القاعة
+لم يتم العثور على بيانات خدمة التصوير
+لم يتم العثور على نتائج للبحث
+لم يتم تحديد الموقع
+لوحة التحكم
+مؤكدة
+مارس
+مايو
+متاح 24/7
+متوفر
+مثال: 50000
+مثال: Canon EOS R5, Sony A7III
+مثال: بغداد - الكرادة
+مثال: قاعات أفراح, تصوير, كيك
+محادثات الدعم الفني
+محادثات الزبائن
+محادثات المزودين
+محادثة المزود
+محجوز بالكامل - اليوم كامل
+محجوز جزئي
+محجوز جزئياً
+محجوز جزئياً (${bookedSlots.length} أوقات)
+محجوز كامل
+محجوز كاملاً
+مراجعة (${_reviewedItems.length})
+مرحباً ${widget.providerName}
+مرحباً بك كمزود خدمة!
+مرحباً، ${_providerData?[
+مرحباً، ${widget.providerName}
+مرحبًا بك في تطبيقنا
+مرحبًا، $name
+مرفوض
+مزود الخدمة غير موجود
+مزود الخدمة: ${item[
+مزود تجريبي
+مزود خدمة: $displayName
+مزود مسجل
+مزودو خدمة ${widget.serviceName}
+مساءً
+مستخدم
+مستخدم: $displayName
+مشاركة الخدمة
+مطاعم
+مطع
+مطعم
+معالجة العنصر $i: ${item[
+معاينة الصورة
+معتمد
+معدل الإلغاء
+معرض الصور (${images.length})
+معرف الخدمة غير صحيح. يرجى المحاولة مرة أخرى.
+معرف الزبون غير متوفر لبدء المحادثة
+معرف المزود مفقود
+معلق
+معلقة
+معلومات
+معلومات إضافية
+معلومات الحجوزات
+معلومات الحساب
+معلومات الخدمة
+معلومات الدفع
+معلومات الزبون
+معلومات الطلب
+معلومات العميل
+معلومات العنصر
+معلومات القاعة
+معلومات القاعة الأساسية
+معلومات المزود
+معلومات المستخدم
+معلومات مزود الخدمة
+مقبول
+مقدم الخدمة: $providerName
+مقدم من:
+مكياج
+ملاحظات
+ملاحظات (اختياري)
+ملاحظات:
+ملاحظات: ${booking[
+ملغى
+من $fromHour $fromPeriod إلى $toHour $toPeriod
+من ${slot.startTime} إلى ${slot.endTime}
+من الساعة:
+منتهي
+منذ 3 ساعات
+منذ 5 ساعات
+منذ ساعتين
+منع أي حجوزات في هذا اليوم
+موافق
+موافق عليه
+موافقة على العناصر الجديدة
+مواقف سيارات
+موجود
+موقع الخدمة المحدد
+موقع الخدمة على الخريطة
+موقع القاعة
+موقع مزود الخدمة
+موقع: $locationName
+موقعي الحالي
+ميسان
+نجاح الدخول
+نزل
+نشطة
+نصيحة
+نظام صوت متطور
+نقل
+نوع الحجز
+نوع الحجز:
+نوع الحجز: اليوم كامل
+نوع الحجز: فترة محددة (${booking[
+نوع الحساب
+نوع الخدمة
+نوع الخدمة 
+نوع الخدمة المقدمة
+نوع الخدمة النهائي: $serviceType
+نوع الخدمة: $serviceType
+نوع الخدمة: ${providerData[
+نوع الخدمة: ${widget.providerData[
+نوع الكاميرا
+نوع الكاميرا والمعدات
+نوفمبر
+نينوى
+هذا التاريخ أو الوقت محجوز مسبقاً. يرجى اختيار موعد آخر.
+هذا التاريخ محجوب من قبل المزود
+هذا الرقم غير مسجل كمزود خدمة. يرجى التواصل مع الإدارة.
+هذا العنصر
+هذا العنصر غير متوفر في الوقت الحالي. يرجى التحقق لاحقاً أو التواصل مع مزود الخدمة
+هذا الوقت يتعارض مع حجز موجود. يرجى اختيار وقت آخر.
+هذا طلب اختبار للتأكد من وصول الطلبات
+هذه الخدمة غير قابلة للحجز عبر التقويم. يمكنك فقط تحديد ما إذا كانت متوفرة أو غير متوفرة للعملاء.
+هذه الخدمة مخصصة لمزودي خدمات التصوير فقط
+هذه الخدمة مخصصة لمزودي قاعات الأعراس فقط
+هل أنت متأكد من إلغاء هذا الحجز؟
+هل أنت متأكد من إلغاء هذا الحجز؟\nلا يمكن التراجع عن هذا الإجراء.
+هل أنت متأكد من الموافقة على 
+هل أنت متأكد من حذف 
+هل أنت متأكد من حذف جميع الحجوزات؟ هذا الإجراء لا يمكن التراجع عنه.
+هل أنت متأكد من حذف خدمة 
+هل أنت متأكد من رفض 
+هل أنت متأكد من قبول 
+هل تحتاج إلى مساعدة؟\nتواصل معنا مباشرة وسنكون سعداء بخدمتك
+هل تريد إزالة 
+هل تريد حذف ${suspiciousBookings.length} حجز مشبوه؟
+هنا يمكنك إدارة طلبات مزودي الخدمة المرسلة
+واسط
+ورد
+ورود
+وصف الخدمة *
+وصف العنصر التجريبي
+وصف القاعة
+وصف القاعة مطلوب
+وصف تفصيلي للخدمة
+وظيفة الحجز غير متوفرة حالياً
+وقت البداية: ${newStartTime!.format(context)}
+وقت النهاية: ${newEndTime!.format(context)}
+يجب إضافة 5 صور على الأقل لخدمة التصوير
+يجب إضافة 5 صور على الأقل للقاعة لتوضيح جميع التفاصيل للعملاء
+يجب اختيار ${5 - _selectedImages.length} صور إضافية
+يجب تحديد موقع الخدمة على الخريطة
+يحدد لاحقاً
+يرجى إدخال اسم الخدمة
+يرجى إدخال اسم العنصر
+يرجى إدخال السعة أو الكمية
+يرجى إدخال السعر
+يرجى إدخال المنطقة
+يرجى إدخال تفاصيل العنصر
+يرجى إدخال جميع الحقول بشكل صحيح
+يرجى إدخال رقم بطاقة الائتمان
+يرجى إدخال رقم صحيح
+يرجى إدخال رمز التحقق
+يرجى إدخال سعر العنصر
+يرجى إدخال نوع الكاميرا
+يرجى إدخال وصف العنصر
+يرجى إضافة خدمة واحدة على الأقل لبدء العمل. سيتم إرسال طلبك للمالك للموافقة.
+يرجى إضافة وصف للخدمة
+يرجى إكمال المتطلبات التالية:
+يرجى اختيار 5 صور على الأقل للقاعة (تم اختيار ${_hallImages.length} صور فقط)
+يرجى اختيار التاريخ للحجز
+يرجى اختيار نوع الحساب
+يرجى اختيار وقت البدء والنهاية للحجز الجزئي
+يرجى التواصل مع الدعم الفني لاستعادة كلمة المرور.
+يرجى دفع العربون بواسطة تطبيق دفع خارجي
+يرجى رفع صورة إيصال الدفع لتأكيد الحجز
+يمكنك التواصل مع مزود الخدمة لإتمام الحجز
+يمكنك الحجز في الأوقات المتاحة فقط:
+يناير
+يوليو
+يوم الزفاف
+يوم كامل محجوز
+يونيو
+ℹ️ لا يوجد مزود سابق بهذا المعرف: $e
+ℹ️ لم يتم العثور على سجل في published_providers لـ: $providerId
+ℹ️ معلومات المستخدم من المحادثة: $otherUserInfo
+⏱️ استغرق تحديد الموقع وقتاً طويلاً. تأكد من وجود إشارة GPS قوية
+⚠️ السعر غير محدد، تواصل مع مزود الخدمة
+⚠️ بيانات المزود الكاملة: $_providerData
+⚠️ تحذير: الخدمة 
+⚠️ تحذير: لم يتم العثور على أي مزودي خدمة في published_providers!
+⚠️ تحذير: لم يتم العثور على نوع خدمة محدد، سيتم استخدام القيمة الافتراضية: $actualServiceType
+⚠️ تعذر النشر في مجموعة 
+⚠️ تعذر نشر العنصر في published_items: $e
+⚠️ تعذر نشر العنصر في مجموعة 
+⚠️ تعذر نشر القاعة في published_items: $e
+⚠️ تم منع إعادة التحميل بسبب خطأ سابق
+⚠️ خطأ عام في معالجة المزود $providerId: $e
+⚠️ خطأ في تحديث البيانات الموجودة: $e
+⚠️ خطأ في تحميل التواريخ المحجوبة: $e
+⚠️ خطأ في حفظ FCM Token للمزود: $e
+⚠️ سيتم استخدام القيم الافتراضية
+⚠️ فشل إثراء بيانات المزود من published_providers: $e
+⚠️ فشل إرسال تحديث الحالة للزبون: $e
+⚠️ فشل إغناء بيانات الحجوزات: $e
+⚠️ فشل التحقق من حالة المزود في published_providers للطلب $requestId: $e
+⚠️ فشل تحديث حالات العناصر: $e
+⚠️ فشل جلب عناصر الطلبات المعلقة من provider_requests للمزود $providerId: $e
+⚠️ لا يوجد itemId في serviceData
+⚠️ لم يتم العثور على بيانات المزود، سيتم استخدام القيم الافتراضية
+⚠️ لم يتم العثور على بيانات في users للمعرف: $_providerId
+⚠️ لم يتم العثور على مستند بالمعرف: $userId
+⚠️ لم يتم العثور على معرف المستخدم في SharedPreferences
+⚠️ يرجى اختيار تاريخ
+⚠️ يرجى اختيار وقت البدء
+⚠️ يرجى اختيار وقت النهاية
+⚠️ يرجى السماح بصلاحيات الموقع من إعدادات التطبيق
+⚠️ يرجى تفعيل خدمة الموقع (GPS) من إعدادات الهاتف
+⚠️ يرجى رفع إيصال الدفع
+⚠️ يوجد تضارب في التاريخ/الوقت
+⚪ غير محدد
+✅ _serviceData المحدثة: $_serviceData
+✅ إجمالي الطلبات المُحمّلة: ${requests.length}
+✅ اكتمل إثراء البيانات
+✅ اكتمل إثراء البيانات\n
+✅ اكتمل التحميل: ${providers.length} مزود خدمة (بعد الدمج)
+✅ اكتمل تحميل بيانات الملف الشخصي
+✅ البيانات المستخرجة:
+✅ التسجيل ناجح - تحديث البيانات والانتقال للرئيسية
+✅ الفئة: $category (عربي: $arabicCollection)
+✅ المزود: $finalProviderName (ID: $providerId)
+✅ تفاصيل المزودين المسترجعين:
+✅ تم إضافة المزود: $providerId مع ${providerItems.length} عنصر
+✅ تم إضافة بيانات users: المحافظة=${_providerData![
+✅ تم إضافة جميع العناصر إلى مجموعة $collectionName مع serviceType: $serviceType
+✅ تم إضافة طلب عنصر جديد للمزود: $providerId مع ${pendingItems.length} عنصر معلق
+✅ تم إضافة مزود جديد: ${data[
+✅ تم إعادة ضبط نموذج الحجز
+✅ تم إنشاء مزود الخدمة بنجاح في published_providers
+✅ تم التأكد من أن المزود هو مزود تصوير من خلال _providerData category
+✅ تم التأكد من أن المزود هو مزود تصوير من خلال _serviceData category
+✅ تم التأكد من أن المزود هو مزود قاعات من خلال isHallProvider
+✅ تم التحقق: القاعة موجودة في مجموعة hall
+✅ تم العثور على المزود منشور في published_providers: $providerId
+✅ تم العثور على المستخدم عبر البحث:
+✅ تم العثور على بيانات users عبر البحث: $userData
+✅ تم العثور على بيانات المستخدم:
+✅ تم العثور على بيانات الواجهة الاحترافية المحفوظة للمزود: $providerName
+✅ تم النشر في published_items: نعم
+✅ تم النشر في published_providers: نعم
+✅ تم النشر في مجموعة 
+✅ تم النشر في مجموعة hall: نعم
+✅ تم تحديث ${itemsQuery.docs.length} عنصر بالاسم التجاري الصحيح
+✅ تم تحديث ${itemsQuery.docs.length} عنصر في مجموعة $collectionName
+✅ تم تحديث الحالة إلى متوفر
+✅ تم تحديث بيانات الخدمة من provider_services: $serviceData
+✅ تم تحديث بيانات الخدمة: $serviceData
+✅ تم تحميل ${items.length} عنصر
+✅ تم تحميل ${providers.length} مزود من مجموعة ${widget.category} كخطة بديلة
+✅ تم تحميل بيانات الخدمة من: ${serviceDoc.reference.path}
+✅ تم تسجيل قاعة الأعراس بنجاح! سيتم مراجعة الطلب من قبل الإدارة
+✅ تم جلب اسم المستخدم من Firestore: $userName
+✅ تم جلب المحافظة من service data: ${_serviceData![
+✅ تم جلب المنطقة من service data: ${_serviceData![
+✅ تم حفظ الطلب بنجاح! معرف الطلب: ${docRef.id}
+✅ تم حفظ بيانات الخدمة الافتراضية
+✅ تم حفظ بيانات تسجيل الدخول محلياً: $phone - $accountType
+✅ تم حفظ بيانات مزود الخدمة والجلسة للتذكر: $providerName
+✅ تم حفظ بيانات مزود الخدمة: ${_providerData?[
+✅ تم حفظ جلسة مزود الخدمة بمعرف: $_providerId
+✅ تم حفظ نوع الخدمة: 
+✅ تم نسخ category إلى _providerData: ${_serviceData![
+✅ تم نسخ serviceType إلى _providerData: ${_serviceData![
+✅ تم نشر $publishedItemsCount عنصر
+✅ تم نشر العنصر أيضاً في 
+✅ تم نشر العنصر أيضاً في published_items بمعرف: ${publishedItemRef.id}
+✅ تم نشر العنصر: ${item[
+✅ تم نشر القاعة أيضاً في published_items بمعرف: ${publishedItemRef.id}
+✅ تم نشر القاعة أيضاً في مجموعة 
+✅ تم نشر عنصر: ${item[
+✅ تم نشر قاعة الأعراس في مجموعة hall بمعرف: ${hallDocRef.id}
+✅ تمت الموافقة ونشر المزود و $publishedItemsCount عنصر في 4 مجموعات بنجاح!
+✅ تمت الموافقة ونشر قاعة الأعراس في 4 مجموعات بنجاح!
+✅ جلسة نشطة موجودة: $phone - نوع الحساب: $accountType
+✅ جميع البيانات متوفرة - الانتقال للصفحة المتخصصة
+✅ عدد الحجوزات المقبولة: ${bookingsQuery.docs.length}
+✅ عدد العناصر المنشورة في 
+✅ عدد العناصر المنشورة في $category: $publishedItemsCount
+✅ عدد العناصر المنشورة في published_items: $publishedItemsCount
+✅ لا يوجد تضارب، يمكن الحجز
+✅ مزود مسجل: $isRegisteredProvider
+✅ نوع: ${isHallProvider ? 
+❌ تفاصيل الخطأ: ${e.toString()}
+❌ تم اكتشاف تضارب في الوقت
+❌ تم تحديث الحالة إلى غير متوفر
+❌ خطأ في الموافقة: $e
+❌ خطأ في تحديث العناصر المعتمدة: $e
+❌ خطأ في تحديث بيانات التقويم: $e
+❌ خطأ في تحديث حالة العناصر الأصلية: $e
+❌ خطأ في تحميل البيانات: $e
+❌ خطأ في تحميل العناصر: $e
+❌ خطأ في تحميل بيانات القاعة: $e
+❌ خطأ في تحميل طلبات مزودي الخدمة: $e
+❌ خطأ في تحميل مزودي الخدمة:
+❌ خطأ في تحميل معرف المستخدم: $e
+❌ خطأ في تحميل موقع المزود: $e
+❌ خطأ في جلب بيانات المزود: $e
+❌ خطأ في جلب مزودي الخدمة: $e
+❌ خطأ في حفظ بيانات الخدمة: $e
+❌ خطأ في معالجة العنصر: $e
+❌ خطأ: القاعة غير موجودة في مجموعة hall بعد الحفظ!
+❌ خطأ: الوثيقة غير موجودة بعد الحفظ!
+❌ عنصر بدون providerId أو providerId فارغ: $data
+❌ لا يوجد user_phone في SharedPreferences
+❌ لم يتم العثور على المستخدم نهائياً!
+❌ لم يتم العثور على بيانات المستخدم في users
+❌ مزود الخدمة غير مسجل في النظام
+❌ مزود الخدمة غير موجود في قاعدة البيانات
+❌ معرف المزود فارغ!
+❌ معرف مزود الخدمة غير موجود، العودة للشاشة الرئيسية
+❌ وقت البدء >= وقت النهاية
+❤️ تمت الإضافة للمفضلات
+➕ تم إضافة عنصر: ${data[
+➕ عنصر منشور: ${data[
+➕ عنصر: ${data[
+🎉 إجمالي العناصر المحدثة للمزود $providerId: $updatedItemsCount
+🎉 إجمالي العناصر المحدثة: $updatedItemsCount
+🎉 انتهى تحديث العناصر المعتمدة - المجموع: $totalUpdatedItems عنصر
+🎉 ملخص الموافقة والنشر:
+🎯 النقر على مزود الخدمة:
+🎯 عدد مزودي الخدمة النهائي: ${providersData.length}
+🏗️ بناء ServiceCategoriesScreen للخدمة: ${widget.serviceId} - ${widget.serviceName}
+🏛️ تمت إضافة البيانات الخاصة بقاعة الأعراس
+🏛️ فتح شاشة إدارة القاعة للمزود: $_providerId
+🏛️ نشر قاعة الأعراس في مجموعة hall...
+🏛️ هل هذا مزود قاعة أعراس؟ $isHallProvider
+🏢 تم تحميل بيانات الخدمة: ${_serviceData?[
+🏰 تم اختيار قاعة عرس - مسار القاعات
+🏰 هل هو مزود قاعة؟ $isHallFromPrefs
+🏷️ الفئة المطلوبة: ${widget.category}
+🏷️ فئة الخدمة: $category
+🏷️ مجموعة الخدمة بالعربي: $arabicCollection
+👑 تم التعرف على المالك
+👤 المستخدم الآخر: $otherUserId
+👤 تم تحميل بيانات مزود الخدمة من providers: ${_providerData?[
+👤 تم تحميل بيانات مزود الخدمة: ${_providerData?[
+👤 معالجة مزود الخدمة المسجل: $providerId
+👤 معرف المستخدم الحالي: $userId
+💔 تمت الإزالة من المفضلات
+💡 التحقق من:
+💰 إيرادات الشهر: $_monthlyRevenue، الإجمالي: $_totalRevenue
+💰 محاولة جلب السعر...
+💾 اسم العنصر: ${itemData[
+💾 حفظ بيانات مزود جديد: $providerData
+💾 حفظ عنصر بـ providerId: ${widget.serviceData[
+💾 نوع الخدمة في العنصر: $serviceType
+📂 المجموعة: published_providers
+📄 بيانات users موجودة: $userData
+📄 بيانات الطلب: $requestData
+📄 عنصر: ${doc.id} - ${data[
+📄 معرف الوثيقة: ${providerDocRef.id}
+📅 تم تحميل ${blockedDates.length} تاريخ محجوب و ${blockedTimeSlots.length} فترة محجوبة جزئياً
+📈 زيادة عدد العناصر للمزود: ${data[
+📊 إحصائيات العناصر: المجموع ${_items.length}، النشط $_activeItems
+📊 البيانات المحفوظة:
+📊 البيانات النهائية لمزود الخدمة:
+📊 بيانات المحادثة: $chatId
+📊 تم العثور على ${altSnap.docs.length} سجل في ${widget.category}
+📊 عدد الطلبات المعتمدة: ${approvedRequestsSnapshot.docs.length}
+📊 عدد الطلبات في provider_requests: ${requestsSnapshot.docs.length}
+📊 عدد العناصر المسترجعة: ${snapshot.docs.length}
+📊 عدد المستندات المسترجعة: ${snapshot.docs.length}
+📊 عدد مزودي الخدمة المسجلين: ${providersSnapshot.docs.length}
+📋 serviceName من البيانات: ${widget.serviceData[
+📋 serviceType من البيانات: ${widget.serviceData[
+📋 البيانات المرسلة لشاشة إضافة العناصر:
+📋 بيانات providers الكاملة: $_providerData
+📋 بيانات الخدمة الكاملة: $_serviceData
+📋 بيانات الخدمة المُرسلة: ${widget.serviceData}
+📋 بيانات الطلب الكاملة: $requestData
+📋 بيانات العنصر: ${item.keys.toList()}
+📋 بيانات المزود: $providerData
+📋 تم جلب بيانات الخدمة: $serviceDocData
+📋 تم جلب بيانات المزود: $providerData
+📋 طلب جديد: $requestId
+📋 عدد الخدمات الضمنية: ${(hallData[
+📋 محتوى _providerData الكامل: $_providerData
+📋 نتيجة التحقق: $canBookResult
+📋 نوع المزود من SharedPreferences: $providerType
+📋 هل serviceType عربي أم إنجليزي؟ ${widget.serviceData[
+📍 موقع
+📝 إنشاء مزود في published_providers مع ID: $providerId
+📝 اسم المزود: $providerName
+📝 اسم المزود: ${widget.providerName}
+📝 الفئة: $category
+📝 الفئة: ${widget.category}
+📝 تم إنشاء بيانات افتراضية لمزود خدمة جديد بنوع: $actualServiceType
+📝 تم اختيار نوع الخدمة: 
+📝 نوع الخدمة المختار: 
+📤 تم إرسال الطلب للمالك بنجاح
+📥 جلب بيانات المستخدم من Firestore...
+📦 خدمة عادية - المسار التقليدي
+📦 عدد العناصر الجديدة: ${itemsData.length}
+📦 عدد العناصر الجديدة: ${itemsToSave.length}
+📦 عدد العناصر القديمة: ${existingItems.length}
+📦 عدد العناصر للمزود $providerId: ${itemsSnapshot.docs.length}
+📦 عدد العناصر: ${items.length}
+📦 وجد ${itemsQuery.docs.length} عنصر في مجموعة $collectionName للمزود $providerId
+📱 مزود خدمة موجود في قاعدة البيانات: ${providerData[
+📱 معرف مزود الخدمة: $_providerId
+📷 صورة
+📷 قائمة الصور: $images
+📸 فتح شاشة إدارة التصوير للمزود: $_providerId
+🔄 إضافة العناصر إلى مجموعة: $collectionName مع serviceType: $serviceType
+🔄 بدء تحديث جميع العناصر المعتمدة سابقاً...
+🔄 بدء تحديث حالة العناصر في المجموعات الأصلية...
+🔄 بدء تحميل بيانات مزود الخدمة...
+🔄 بدء تحميل عناصر مزود الخدمة...
+🔄 بدء عملية موافقة المزود: $providerId
+🔄 تحديث _serviceData بالبيانات الحقيقية...
+🔄 تحديث بيانات مزود موجود: $updateData
+🔄 تحديث عناصر المزود $providerId في فئة $category
+🔄 تم تحويل نوع الخدمة من $originalServiceType إلى $convertedServiceType
+🔄 جلب المعلومات الكاملة للمزود: $providerId
+🔄 محاولة البحث برقم الهاتف في حقل phone...
+🔄 محاولة البحث في users برقم الهاتف...
+🔄 محاولة حفظ الطلب في provider_requests...
+🔄 معالجة المزود: ${provider[
+🔍 URL الصورة: $imageUrl
+🔍 اسم الخدمة المستلم: $serviceName
+🔍 اسم الخدمة من بيانات المزود: $actualServiceName
+🔍 البحث عن بيانات الخدمة للمزود: $_providerId
+🔍 البحث عن معرف المزود في users: $_providerId
+🔍 البحث في provider_items بـ providerId: $_providerId - وجد ${providerItemsSnapshot.docs.length} عنصر
+🔍 البحث في published_items بـ providerId: $_providerId - وجد ${publishedItemsSnapshot.docs.length} عنصر
+🔍 البحث في مجموعة $serviceType: وجد ${query.docs.length} عنصر
+🔍 البحث في مجموعة $serviceType: وجد ${snapshot.docs.length} عنصر
+🔍 البيانات النهائية:
+🔍 التحقق من التضارب للعنصر: $itemId
+🔍 التحقق من الجلسة المحفوظة...
+🔍 التحقق من الحفظ: $savedPhone - $savedAccountType
+🔍 التحقق من الحفظ: هاتف=$savedPhone، نوع=$savedAccountType، معرف=$savedUserId
+🔍 التحقق من نوع الخدمة...
+🔍 الجلسة موجودة: ${sessionDoc.exists}
+🔍 الجلسة نشطة (active): ${sessionDoc.data()?[
+🔍 الجلسة نشطة (isActive): ${sessionDoc.data()?[
+🔍 بدء _submitServiceInfo
+🔍 بدء تحميل طلبات مزودي الخدمة...
+🔍 بيانات الجلسة: ${sessionDoc.data()}
+🔍 تحميل عناصر المزود: ${widget.providerId}
+🔍 تحميل مزودي الخدمة للزبائن
+🔍 تم تحميل ${_items.length} عنصر لمزود الخدمة $_providerId
+🔍 تم تحميل ${allItems.length} عنصر إجمالي
+🔍 رقم الهاتف المحفوظ: $phone
+🔍 فحص الجلسة لرقم: $phone
+🔍 مجموعة قاعدة البيانات: $collectionName
+🔍 محاولة إثراء بيانات المستخدم...
+🔍 محاولة تحميل بيانات المستخدم لرقم: $userId
+🔍 مزود خدمة - فحص البيانات المحفوظة...
+🔍 نوع الخدمة الأصلي: $originalServiceType
+🔍 نوع الخدمة العربي: $serviceType
+🔍 نوع الخدمة المحول: $actualServiceType
+🔍 نوع الخدمة النهائي: ${_serviceData?[
+🔑 المفاتيح بعد الحفظ: ${prefs.getKeys()}
+🔑 المفاتيح بعد حفظ مزود الخدمة: ${prefs.getKeys()}
+🔑 المفاتيح قبل الحفظ: ${prefs.getKeys()}
+🔙 عودة من HallRegistrationScreen - النتيجة: $result
+🔧 نوع الخدمة: $serviceName
+🔴 مرفوض
+🔵 غير نشط
+🕐 الوقت المطلوب: ${newSlot.startTime} - ${newSlot.endTime}
+🖼️ محاولة عرض صورة العنصر: ${item[
+🗑️ تم حذف المزود السابق بالمعرف: $providerId
+🚀 فتح HallRegistrationScreen...
+🛟 تفعيل خطة الطوارئ: التحميل من مجموعة ${widget.category}
+🟠 في انتظار الموافقة
+🟠 معلق
+🟢 نشط
+🧹 بيانات مزود خدمة محفوظة غير صحيحة، تنظيف البيانات
+🧹 تنظيف بيانات جلسة غير صحيحة: $currentUserId
+🧹 خطأ في التحقق من الجلسة، تنظيف البيانات: $e
+🧹 مستخدم غير موجود، تنظيف البيانات المحفوظة

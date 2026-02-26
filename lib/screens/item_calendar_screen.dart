@@ -1,0 +1,326 @@
+import 'package:flutter/material.dart';
+import 'package:table_calendar/table_calendar.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class ItemCalendarScreen extends StatefulWidget {
+  final String itemId;
+  final String itemName;
+  final String serviceType;
+  final String providerId;
+
+  const ItemCalendarScreen({
+    super.key,
+    required this.itemId,
+    required this.itemName,
+    required this.serviceType,
+    required this.providerId,
+  });
+
+  @override
+  State<ItemCalendarScreen> createState() => _ItemCalendarScreenState();
+}
+
+class _ItemCalendarScreenState extends State<ItemCalendarScreen> {
+  late final ValueNotifier<List<DateTime>> _selectedDays;
+  DateTime _focusedDay = DateTime.now();
+  List<DateTime> _bookedDates = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDays = ValueNotifier([]);
+    _loadBookedDates();
+  }
+
+  @override
+  void dispose() {
+    _selectedDays.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadBookedDates() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceType)
+          .collection('items')
+          .doc(widget.itemId)
+          .get();
+
+      if (doc.exists) {
+        final data = doc.data();
+        final bookedDatesString = List<String>.from(data?['bookedDates'] ?? []);
+        
+        setState(() {
+          _bookedDates = bookedDatesString
+              .map((dateString) => DateTime.parse(dateString))
+              .toList();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('خطأ في تحميل التواريخ المحجوزة: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _updateBookedDates() async {
+    try {
+      final bookedDatesString = _bookedDates
+          .map((date) => date.toIso8601String().split('T')[0])
+          .toList();
+
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceType)
+          .collection('items')
+          .doc(widget.itemId)
+          .update({
+        'bookedDates': bookedDatesString,
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ تم تحديث التقويم بنجاح'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ خطأ في التحديث: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
+    setState(() {
+      _focusedDay = focusedDay;
+      
+      // تحقق إذا كان اليوم محجوز مسبقاً
+      final isBooked = _bookedDates.any((date) => _isSameDay(date, selectedDay));
+      
+      if (isBooked) {
+        // إلغاء الحجز
+        _bookedDates.removeWhere((date) => _isSameDay(date, selectedDay));
+      } else {
+        // إضافة حجز
+        _bookedDates.add(selectedDay);
+      }
+      
+      _updateBookedDates();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('تقويم ${widget.itemName}'),
+          backgroundColor: const Color(0xFF1E88E5),
+          foregroundColor: Colors.white,
+        ),
+        body: const Center(
+          child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'تقويم ${widget.itemName}',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: const Color(0xFF1E88E5),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: Column(
+        children: [
+          // معلومات العنصر
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E88E5).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.event_available,
+                    color: Color(0xFF1E88E5),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.itemName,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2D3748),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_bookedDates.length} يوم محجوز',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // التقويم
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: TableCalendar<DateTime>(
+                firstDay: DateTime.utc(2020, 1, 1),
+                lastDay: DateTime.utc(2030, 12, 31),
+                focusedDay: _focusedDay,
+                calendarFormat: CalendarFormat.month,
+                startingDayOfWeek: StartingDayOfWeek.saturday,
+                calendarStyle: CalendarStyle(
+                  outsideDaysVisible: false,
+                  todayDecoration: BoxDecoration(
+                    color: Colors.orange[400],
+                    shape: BoxShape.circle,
+                  ),
+                  markerDecoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  selectedDecoration: const BoxDecoration(
+                    color: Color(0xFF1E88E5),
+                    shape: BoxShape.circle,
+                  ),
+                  defaultTextStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  weekendTextStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF1E88E5),
+                  ),
+                ),
+                headerStyle: const HeaderStyle(
+                  formatButtonVisible: false,
+                  titleCentered: true,
+                  titleTextStyle: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D3748),
+                  ),
+                  leftChevronIcon: Icon(
+                    Icons.chevron_left,
+                    color: Color(0xFF1E88E5),
+                  ),
+                  rightChevronIcon: Icon(
+                    Icons.chevron_right,
+                    color: Color(0xFF1E88E5),
+                  ),
+                ),
+                onDaySelected: _onDaySelected,
+                eventLoader: (day) {
+                  if (_bookedDates.any((date) => _isSameDay(date, day))) {
+                    return [day];
+                  }
+                  return [];
+                },
+              ),
+            ),
+          ),
+
+          // تعليمات
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.blue[200]!,
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  color: Colors.blue[700],
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'اضغط على أي يوم لتحديده كمحجوز أو لإلغاء الحجز',
+                    style: TextStyle(
+                      color: Colors.blue[700],
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

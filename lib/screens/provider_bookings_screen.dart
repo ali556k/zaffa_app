@@ -1,0 +1,544 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+import '../utils/chat_helper.dart';
+
+class ProviderBookingsScreen extends StatelessWidget {
+  const ProviderBookingsScreen({super.key});
+
+  void _openChat(QueryDocumentSnapshot booking, BuildContext context) {
+    // فتح المحادثة مع العميل باستخدام ChatHelper
+    ChatHelper.startChatWithUser(
+      context: context,
+      otherUserId: booking['customerId'] ?? booking['userPhone'] ?? '',
+      otherUserName:
+          booking['customerName'] ?? booking['userPhone'] ?? 'العميل',
+      otherUserRole: 'customer',
+    );
+  }
+
+  Future<void> _updateStatus(
+    String bookingId,
+    String status,
+    BuildContext context,
+  ) async {
+    await FirebaseFirestore.instance
+        .collection('bookings')
+        .doc(bookingId)
+        .update({'status': status});
+
+    // إرسال إشعار للمستخدم عند تأكيد أو رفض الحجز
+    if (status == 'تم التأكيد' || status == 'مرفوض') {
+      final bookingDoc = await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(bookingId)
+          .get();
+      final bookingData = bookingDoc.data() as Map<String, dynamic>;
+
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'userId': bookingData['userPhone'] ?? '',
+        'title': status == 'تم التأكيد' ? 'تم تأكيد حجزك!' : 'تم رفض حجزك',
+        'body':
+            'عنصر: ${bookingData['itemName'] ?? bookingData['serviceName']} - التاريخ: ${bookingData['date']}',
+        'type': 'booking_update',
+        'bookingId': bookingId,
+        'status': status,
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('تم تحديث حالة الحجز!')));
+  }
+
+  Widget _buildStatusBadge(String status) {
+    Color color;
+    String text;
+
+    switch (status) {
+      case 'تم التأكيد':
+        color = Colors.green;
+        text = 'مؤكد';
+        break;
+      case 'مرفوض':
+        color = Colors.red;
+        text = 'مرفوض';
+        break;
+      case 'بانتظار التأكيد':
+      default:
+        color = Colors.orange;
+        text = 'قيد الانتظار';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color, width: 1),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return 'غير محدد';
+
+    try {
+      if (date is String) {
+        final dateTime = DateTime.parse(date);
+        return '${dateTime.year}-${dateTime.month.toString().padLeft(2, '0')}-${dateTime.day.toString().padLeft(2, '0')}';
+      }
+      return date.toString();
+    } catch (e) {
+      return date.toString();
+    }
+  }
+
+  void _showBookingDetails(
+    BuildContext context,
+    String bookingId,
+    Map<String, dynamic> bookingData,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // العنوان
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'تفاصيل الحجز',
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF6E1229),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+
+                // معلومات الخدمة
+                _buildDetailRow(
+                  'الخدمة/العنصر',
+                  bookingData['itemName'] ?? 'غير محدد',
+                  Icons.shopping_bag,
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  'السعر',
+                  bookingData['price'] ?? 'غير محدد',
+                  Icons.attach_money,
+                ),
+                const SizedBox(height: 12),
+
+                // معلومات العميل
+                const Text(
+                  'معلومات العميل',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF6E1229),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildDetailRow(
+                  'رقم الهاتف',
+                  bookingData['userPhone'] ?? 'غير محدد',
+                  Icons.phone,
+                ),
+                const SizedBox(height: 16),
+
+                // التاريخ والوقت
+                const Text(
+                  'التاريخ والوقت',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF6E1229),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildDetailRow(
+                  'التاريخ',
+                  _formatDate(bookingData['date']),
+                  Icons.calendar_today,
+                ),
+                const SizedBox(height: 12),
+                _buildDetailRow(
+                  'الوقت',
+                  bookingData['time'] ?? 'غير محدد',
+                  Icons.access_time,
+                ),
+                const SizedBox(height: 16),
+
+                // تفاصيل الحجز من العميل
+                if (bookingData['bookingDetails'] != null &&
+                    bookingData['bookingDetails'].toString().isNotEmpty) ...[
+                  const Text(
+                    'تفاصيل من العميل',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6E1229),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey[300]!),
+                    ),
+                    child: Text(
+                      bookingData['bookingDetails'],
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // صورة الإيصال
+                if (bookingData['receiptUrl'] != null &&
+                    bookingData['receiptUrl'].toString().isNotEmpty) ...[
+                  const Text(
+                    'إيصال الدفع',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6E1229),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      bookingData['receiptUrl'],
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 200,
+                          alignment: Alignment.center,
+                          child: CircularProgressIndicator(
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 200,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[200],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 8),
+                              Text('خطأ في تحميل الصورة'),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // الحالة
+                Row(
+                  children: [
+                    const Text(
+                      'الحالة: ',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    _buildStatusBadge(
+                      bookingData['status'] ?? 'بانتظار التأكيد',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: Colors.grey[600]),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 14, color: Colors.black54),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('حجوزات مزود الخدمة'),
+        backgroundColor: const Color(0xFF6E1229),
+        foregroundColor: Colors.white,
+      ),
+      body: FutureBuilder<SharedPreferences>(
+        future: SharedPreferences.getInstance(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData)
+            return const Center(
+              child: SizedBox(
+                width: 30,
+                height: 30,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          final prefs = snapshot.data!;
+          final currentUserPhone = prefs.getString('user_phone') ?? '';
+
+          return StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('bookings')
+                .where('providerPhone', isEqualTo: currentUserPhone)
+                .orderBy('createdAt', descending: true)
+                .limit(20)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(child: Text('لا توجد حجوزات حالياً.'));
+              }
+              final bookings = snapshot.data!.docs;
+              return ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: bookings.length,
+                addAutomaticKeepAlives: false,
+                addRepaintBoundaries: true,
+                cacheExtent: 200,
+                itemBuilder: (context, index) {
+                  final booking = bookings[index];
+                  final bookingData = booking.data() as Map<String, dynamic>;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () =>
+                          _showBookingDetails(context, booking.id, bookingData),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // العنوان مع الحالة
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    bookingData['itemName'] ?? 'حجز',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF6E1229),
+                                    ),
+                                  ),
+                                ),
+                                _buildStatusBadge(
+                                  bookingData['status'] ?? 'بانتظار التأكيد',
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // معلومات مختصرة
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.person,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'العميل: ${bookingData['userPhone'] ?? 'غير محدد'}',
+                                    style: const TextStyle(fontSize: 14),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.calendar_today,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _formatDate(bookingData['date']),
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                const SizedBox(width: 16),
+                                const Icon(
+                                  Icons.access_time,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  bookingData['time'] ?? 'غير محدد',
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+
+                            // الأزرار
+                            Row(
+                              children: [
+                                if (bookingData['status'] ==
+                                    'بانتظار التأكيد') ...[
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () => _updateStatus(
+                                        booking.id,
+                                        'تم التأكيد',
+                                        context,
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                      icon: Icon(Icons.check, size: 18),
+                                      label: Text('confirm'),
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      onPressed: () => _updateStatus(
+                                        booking.id,
+                                        'مرفوض',
+                                        context,
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.red,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                      ),
+                                      icon: Icon(Icons.close, size: 18),
+                                      label: Text('reject'),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () =>
+                                        _openChat(booking, context),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF6E1229),
+                                      side: const BorderSide(
+                                        color: Color(0xFF6E1229),
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    icon: const Icon(Icons.chat, size: 18),
+                                    label: const Text('محادثة'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}

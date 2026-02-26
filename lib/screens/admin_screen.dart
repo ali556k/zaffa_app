@@ -1,0 +1,166 @@
+import 'package:flutter/material.dart';
+import 'service_items_screen.dart';
+import 'admin_provider_requests_screen.dart';
+
+class AdminScreen extends StatefulWidget {
+  const AdminScreen({super.key});
+
+  @override
+  _AdminScreenState createState() => _AdminScreenState();
+}
+
+class _AdminScreenState extends State<AdminScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final List<Map<String, String>> mainServices = [
+      {'id': 'car', 'name': 'خدمة السيارة'},
+      {'id': 'hotel', 'name': 'خدمة الفندق'},
+      {'id': 'hall', 'name': 'قاعة العرس'},
+      {'id': 'bouquet', 'name': 'بوكيه الورد'},
+    ];
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('إدارة الخدمات'),
+        backgroundColor: const Color(0xFF1E88E5),
+        foregroundColor: Colors.white,
+        actions: [
+          // زر الطلبات
+          IconButton(
+            icon: const Icon(Icons.assignment),
+            tooltip: 'طلبات مزودي الخدمة',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => Scaffold(
+                    appBar: AppBar(
+                      title: Text('provider_requests'),
+                      backgroundColor: Color(0xFF1E88E5),
+                      foregroundColor: Colors.white,
+                    ),
+                    body: const Center(child: Text('شاشة طلبات مزودي الخدمة')),
+                  ),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'إعادة تعيين تاريخ يوم العرس',
+            onPressed: () async {
+              // تم حذف منطق SharedPreferences نهائياً. استخدم flutter_secure_storage أو Firestore إذا لزم الأمر.
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('تمت إعادة تعيين تاريخ يوم العرس'),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // بطاقة الطلبات في أعلى الصفحة
+          Container(
+            margin: const EdgeInsets.all(16),
+            child: Card(
+              elevation: 6,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              color: const Color(0xFF1E88E5),
+              child: ListTile(
+                leading: const Icon(
+                  Icons.assignment,
+                  size: 40,
+                  color: Colors.white,
+                ),
+                title: const Text(
+                  'طلبات مزودي الخدمة',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                subtitle: const Text(
+                  'عرض والموافقة على الطلبات الجديدة',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                trailing: const Icon(
+                  Icons.arrow_forward_ios,
+                  color: Colors.white,
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AdminProviderRequestsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // قائمة الخدمات الرئيسية
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'إدارة الخدمات',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+
+          Expanded(
+            child: ListView.builder(
+              itemCount: mainServices.length,
+              itemBuilder: (context, index) {
+                final service = mainServices[index];
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.folder,
+                      size: 40,
+                      color: const Color(0xFF800000),
+                    ),
+                    title: Text(
+                      service['name']!,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ServiceItemsScreen(
+                            serviceId: service['id']!,
+                            serviceName: service['name']!,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

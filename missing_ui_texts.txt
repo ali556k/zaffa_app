@@ -1,0 +1,334 @@
+النصوص الناقصة (181):
+============================================================
+
+
+📄 admin_provider_requests_screen.dart (25 نص):
+------------------------------------------------------------
+  [653] $businessName (طلب جديد)
+  [716] خدمة: $serviceName
+  [721] الهاتف: $providerPhone
+  [732] طلب جديد - عدد العناصر: $totalItems
+  [782] صورة الخدمة:
+  [936] ] as List).length} عنصر قديم
+  [989] $totalItems عنصر جديد
+  [1184] التفاصيل:
+  [1230] السعر:
+  [1240] ]} دينار عراقي
+  [1273] السعة:
+  [1306] الصور المرفقة:
+  [1420] خدمة: ${providerData[
+  [1513] نوع الخدمة: ${providerData[
+  [1564] تاريخ التسجيل: ${_formatDate(providerData[
+  [1605] عناصر الخدمة:
+  [2289] عنصر: ${item[
+  [2333] اختر تاريخ الحجز:
+  [3761] الخدمات الضمنية (${includedServices.length})
+  [3835] صور القاعة (${hallImages.length})
+  [4080] ${pendingItems.length} عنصر جديد
+  [4115] العناصر الجديدة المعلقة:
+  [4138] العناصر السابقة:
+  [4323] موقع: $locationName
+  [4340] الإحداثيات: $lat, $lng
+
+📄 provider_main_professional.dart (14 نص):
+------------------------------------------------------------
+  [1031] ] ?? 0} د.ع
+  [1045] ] ?? 0} خدمة
+  [1268] $pricePerHour د.ع
+  [1290] ${images.length} صورة
+  [2118] الزبون: ${booking[
+  [2168] الموقع: ${booking[
+  [2188] تاريخ إنشاء: ${_formatDateTime(booking[
+  [2206] تاريخ الحجز: ${_formatDateOnly(booking[
+  [2233] نوع الحجز: فترة محددة (${booking[
+  [2256] ملاحظات: ${booking[
+  [2269] إيصال الدفع:
+  [2538] ${_bookings.length} حجز
+  [3113] قام ${_providerData?[
+  [3465] ${images.length} صور متاحة - اسحب لعرض المزيد
+
+📄 photography_registration_screen.dart (13 نص):
+------------------------------------------------------------
+  [202] تم_التسجيل_بنجاح
+  [250] جاري_حفظ_البيانات
+  [367] صور_على_الأقل
+  [389] تغيير الصور (${_selectedImages.length})
+  [434] تم اختيار ${_selectedImages.length} صورة ✓
+  [435] يجب اختيار ${5 - _selectedImages.length} صور إضافية
+  [523] السعر_بالدينار_العراقي
+  [524] مثال
+  [597] نوع_الكاميرا_والمعدات
+  [598] مثال_2
+  [664] وصف_تفصيلي_للخدمة
+  [665] اكتب_وصفاً_شاملاً_للخدمات_التي
+  [714] تسجيل_الخدمة
+
+📄 booking_screen.dart (8 نص):
+------------------------------------------------------------
+  [357] من ${slot.startTime} إلى ${slot.endTime}
+  [1707] سعر الساعة الواحدة:
+  [1724] عدد الساعات المحجوزة:
+  [1728] ${_formatPrice(_getBookedHours())} ساعة
+  [1741] المبلغ الإجمالي:
+  [1749] ${_formatPrice(_calculateFinalPrice())} د.ع
+  [1952] نوع الحجز:
+  [2573] يرجى إكمال المتطلبات التالية:
+
+📄 booking_management_screen.dart (7 نص):
+------------------------------------------------------------
+  [403] إدارة حجوزات ${day.day}/${day.month}/${day.year}
+  [525] حدد الفترة الزمنية المحجوزة:
+  [546] من الساعة:
+  [640] إلى الساعة:
+  [729] الفترة المحجوزة: من $fromHour $fromPeriod إلى $toHour $toPeriod
+  [753] من $fromHour $fromPeriod إلى $toHour $toPeriod
+  [860] محجوز جزئياً (${bookedSlots.length} أوقات)
+
+📄 customer_booking_calendar.dart (7 نص):
+------------------------------------------------------------
+  [377] حجز ${widget.itemName}
+  [387] التاريخ: ${selectedDay.day}/${selectedDay.month}/${selectedDay.year}
+  [437] يمكنك الحجز في الأوقات المتاحة فقط:
+  [544] حدد الوقت المطلوب للحجز:
+  [704] الوقت المطلوب: من $fromHour $fromPeriod إلى $toHour $toPeriod
+  [746] تم تأكيد الحجز ليوم ${selectedDay.day}/${selectedDay.month}/${selectedDay.year}\n
+  [747] الوقت: $timeSlot
+
+📄 hall_management_screen.dart (6 نص):
+------------------------------------------------------------
+  [241] تم حجب الفترة $timeSlot في ${DateFormat(
+  [599] أيام محجوبة بالكامل:
+  [637] فترات محجوبة جزئياً:
+  [696] الحجوزات (${_bookings.length})
+  [761] التاريخ: ${booking[
+  [765] الهاتف: ${booking[
+
+📄 my_bookings_screen.dart (6 نص):
+------------------------------------------------------------
+  [101] حدث_خطأ_في_تحميل_الحجوزات
+  [137] ابدأ_بحجز_خدمة_من_الصفحة
+  [263] التاريخ: $date
+  [278] الوقت: $time
+  [293] السعر: $price د.ع
+  [322] تواصل
+
+📄 hall_registration_screen.dart (5 نص):
+------------------------------------------------------------
+  [195] يرجى اختيار 5 صور على الأقل للقاعة (تم اختيار ${_hallImages.length} صور فقط)
+  [485] تم اختيار ${_hallImages.length} صورة
+  [509] تحتاج إلى ${5 - _hallImages.length} صورة إضافية
+  [573] اختر الخدمات الضمنية التي تقدمها القاعة وحدد أسعارها:
+  [938] الموقع المختار: ${_selectedLocation!.latitude.toStringAsFixed(4)}, ${_selectedLocation!.longitude.toStringAsFixed(4)}
+
+📄 services_screen.dart (5 نص):
+------------------------------------------------------------
+  [246] $count مزود
+  [347] مزودو خدمة ${widget.serviceName}
+  [520] $itemsCount عنصر متاح
+  [603] عناصر $providerName
+  [677] تفاصيل العنصر: ${itemData[
+
+📄 service_information_screen.dart (5 نص):
+------------------------------------------------------------
+  [434] الاسم: ${widget.userName}
+  [445] الهاتف: ${widget.userPhone}
+  [459] المحافظة: ${widget.userGovernorate}
+  [659] خط العرض: ${_selectedLocation!.latitude.toStringAsFixed(4)}
+  [666] خط الطول: ${_selectedLocation!.longitude.toStringAsFixed(4)}
+
+📄 provider_main_professional_fixed.dart (4 نص):
+------------------------------------------------------------
+  [353] مرحباً، ${_providerData?[
+  [720] المبلغ: ${booking[
+  [1133] الوصف: ${item[
+  [1135] الحالة: ${item[
+
+📄 provider_service_registration_screen.dart (4 نص):
+------------------------------------------------------------
+  [409] مرحباً ${widget.providerName}
+  [821] الموقع المحدد:
+  [828] خط الطول: ${_selectedLocation!.longitude.toStringAsFixed(6)}
+  [832] خط العرض: ${_selectedLocation!.latitude.toStringAsFixed(6)}
+
+📄 admin_items_approval_screen.dart (3 نص):
+------------------------------------------------------------
+  [352] مقدم الخدمة: $providerName
+  [376] $price ريال
+  [385] تاريخ الإضافة: ${createdAt.toDate().day}/${createdAt.toDate().month}/${createdAt.toDate().year}
+
+📄 admin_requests.dart (3 نص):
+------------------------------------------------------------
+  [125] طلب من: $providerName
+  [151] نوع الخدمة: $serviceType
+  [157] تاريخ الطلب: ${_formatDate(timestamp.toDate())}
+
+📄 customer_bookings_screen.dart (3 نص):
+------------------------------------------------------------
+  [776] الحجز الحالي:
+  [842] وقت البداية: ${newStartTime!.format(context)}
+  [860] وقت النهاية: ${newEndTime!.format(context)}
+
+📄 fazaa_screen.dart (3 نص):
+------------------------------------------------------------
+  [35] عروض_جاهزة_للأعراس
+  [44] احصل_على_باقات_متكاملة_تشمل
+  [73] العروض_قيد_التحضير_وستتوفر_قريباً
+
+📄 hall_details_screen.dart (3 نص):
+------------------------------------------------------------
+  [702] تشمل القاعة الخدمات التالية:
+  [765] ${_formatPrice(servicePrice)} د.ع
+  [805] ${_formatPrice(_calculateTotalServicesPrice(includedServices))} د.ع
+
+📄 main_navigation_screen.dart (3 نص):
+------------------------------------------------------------
+  [142] عناصر الخدمة المعتمدة:
+  [166] عناصر بانتظار الموافقة:
+  [276] حدث خطأ أثناء تحميل الحجوزات. تأكد من وجود الحقل createdAt في كل حجز أو تحقق من اتصال الإنترنت.\n${snapshot.error}
+
+📄 main_navigation_screen_backup.dart (3 نص):
+------------------------------------------------------------
+  [1040] اسم الزبون: ${booking[
+  [1045] تفاصيل الطلب: ${booking[
+  [1047] الحالة: ${booking[
+
+📄 photography_management_screen.dart (3 نص):
+------------------------------------------------------------
+  [520] معرض الصور (${images.length})
+  [786] عدد الساعات: ${booking[
+  [786] ]} ساعة
+
+📄 provider_bookings_management_screen.dart (3 نص):
+------------------------------------------------------------
+  [304] ملاحظات:
+  [493] العنصر: ${booking.itemName}
+  [504] الزبون: ${booking.customerName}
+
+📄 provider_home_screen.dart (3 نص):
+------------------------------------------------------------
+  [110] مرحبًا، $name
+  [120] حالة الطلب:
+  [155] الخدمات المقدمة:
+
+📄 provider_statistics_screen.dart (3 نص):
+------------------------------------------------------------
+  [327] $monthName\n${rod.toY.toInt()} حجز
+  [459] ${entry.value} حجز (${percentage.toStringAsFixed(1)}%)
+  [567] ${item.value} حجز (${percentage.toStringAsFixed(1)}%)
+
+📄 service_items_screen.dart (3 نص):
+------------------------------------------------------------
+  [198] عناصر ${widget.serviceName}
+  [665] الحجوزات الحالية:
+  [694] إضافة حجز جديد:
+
+📄 add_service_items_screen.dart (2 نص):
+------------------------------------------------------------
+  [321] التفاصيل: ${e.toString()}
+  [438] السعر: ${item[
+
+📄 admin_review_screen.dart (2 نص):
+------------------------------------------------------------
+  [195] مزود الخدمة: ${item[
+  [379] سبب الرفض:
+
+📄 item_details_screen.dart (2 نص):
+------------------------------------------------------------
+  [285] $price د.ع
+  [1279] حجز جزئي - فترات محجوزة:
+
+📄 payment_screen.dart (2 نص):
+------------------------------------------------------------
+  [19] المبلغ المستحق:
+  [21] ${amount.toStringAsFixed(2)} د.ع
+
+📄 provider_bookings_screen.dart (2 نص):
+------------------------------------------------------------
+  [252] الحالة:
+  [366] العميل: ${bookingData[
+
+📄 provider_dashboard_screen.dart (2 نص):
+------------------------------------------------------------
+  [187] مرحباً، ${widget.providerName}
+  [264] عناصري (${_items.length})
+
+📄 provider_items_registration_screen.dart (2 نص):
+------------------------------------------------------------
+  [55] خدمة: ${widget.serviceData[
+  [1105] (${_images.length}/3 صور كحد أدنى)
+
+📄 provider_main_screen.dart (2 نص):
+------------------------------------------------------------
+  [1996] العميل: ${booking[
+  [1999] ]} د.ع
+
+📄 provider_registration_screen.dart (2 نص):
+------------------------------------------------------------
+  [332] خط العرض: ${_currentLocation!.latitude.toStringAsFixed(6)}
+  [339] خط الطول: ${_currentLocation!.longitude.toStringAsFixed(6)}
+
+📄 service_item_details_screen.dart (2 نص):
+------------------------------------------------------------
+  [121] $details\nالمكان: $location
+  [127] السعر: ${price.toStringAsFixed(0)} د.ع
+
+📄 support_chats_screen.dart (2 نص):
+------------------------------------------------------------
+  [46] مزود خدمة: $displayName
+  [46] مستخدم: $displayName
+
+📄 booking_data_fixer_screen.dart (1 نص):
+------------------------------------------------------------
+  [312] ${entry.value} حجز
+
+📄 booking_management_screen_new.dart (1 نص):
+------------------------------------------------------------
+  [534] حجوزات ${_selectedDay.day}/${_selectedDay.month}/${_selectedDay.year}
+
+📄 enhanced_item_details_screen.dart (1 نص):
+------------------------------------------------------------
+  [287] ]}\nالمكان: ${widget.item[
+
+📄 favorites_screen.dart (1 نص):
+------------------------------------------------------------
+  [328] ${favorite.price} د.ع
+
+📄 item_calendar_screen.dart (1 نص):
+------------------------------------------------------------
+  [203] ${_bookedDates.length} يوم محجوز
+
+📄 item_detail_screen.dart (1 نص):
+------------------------------------------------------------
+  [241] ]} دينار
+
+📄 phone_verification_screen.dart (1 نص):
+------------------------------------------------------------
+  [104] سيتم إرسال رمز تحقق إلى: ${widget.phoneNumber}
+
+📄 provider_item_management_screen.dart (1 نص):
+------------------------------------------------------------
+  [136] هذه_الخدمة_غير_قابلة_للحجز
+
+📄 published_providers_screen.dart (1 نص):
+------------------------------------------------------------
+  [381] البحث في ${widget.categoryTitle}...
+
+📄 ratings_screen.dart (1 نص):
+------------------------------------------------------------
+  [107] ${stats.totalRatings} تقييم
+
+📄 service_categories_screen.dart (1 نص):
+------------------------------------------------------------
+  [485] $price دينار
+
+📄 service_management_screens.dart (1 نص):
+------------------------------------------------------------
+  [578] إجمالي الحجوزات: ${bookedDates.length}
+
+📄 wedding_day_screen.dart (1 نص):
+------------------------------------------------------------
+  [82] الوقت المتبقي:
+
+📄 chats_list_screen.dart (1 نص):
+------------------------------------------------------------
+  [56] محادثة مع: $otherId

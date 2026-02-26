@@ -1,0 +1,689 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'main_navigation_screen.dart';
+import 'photography_registration_screen.dart';
+import '../register_with_otp.dart';
+
+// صفحة طلب التحويل إلى مزود خدمة
+class ProviderRequestScreen extends StatefulWidget {
+  const ProviderRequestScreen({super.key});
+
+  @override
+  _ProviderRequestScreenState createState() => _ProviderRequestScreenState();
+}
+
+class _ProviderRequestScreenState extends State<ProviderRequestScreen> {
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController areaController = TextEditingController();
+  String? selectedGovernorate;
+  String? selectedService;
+  String? imagePath;
+  List<String> serviceImages = []; // صور الخدمة الإضافية
+
+  Future<void> pickImage() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked != null) {
+      setState(() {
+        imagePath = picked.path;
+      });
+    }
+  }
+
+  Future<void> pickServiceImages() async {
+    final picked = await ImagePicker().pickMultiImage();
+    if (picked.isNotEmpty) {
+      setState(() {
+        serviceImages = picked.map((e) => e.path).toList();
+      });
+    }
+  }
+
+  final List<String> iraqGovernorates = [
+    'بغداد',
+    'البصرة',
+    'نينوى',
+    'أربيل',
+    'الأنبار',
+    'ذي قار',
+    'السليمانية',
+    'بابل',
+    'ديالى',
+    'كركوك',
+    'النجف',
+    'صلاح الدين',
+    'القادسية',
+    'واسط',
+    'ميسان',
+    'المثنى',
+    'دهوك',
+    'كربلاء',
+  ];
+  final List<String> weddingServices = [
+    'قاعة عرس',
+    'فنادق',
+    'مطعم',
+    'كيك',
+    'تأجير سيارات',
+    'تزيين السيارة',
+    'بدلات رجالي',
+    'فستان العروس',
+    'صالون وعناية',
+    'التصوير',
+    'جلسات تصوير',
+    'شركة سياحة',
+    'ورد',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('طلب مزود خدمة')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'معلومات مزود الخدمة',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: pickImage,
+              child: Container(
+                height: 120,
+                width: 120,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey),
+                ),
+                child: imagePath == null
+                    ? Icon(Icons.add_a_photo, size: 40, color: Colors.grey)
+                    : ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(File(imagePath!), fit: BoxFit.cover),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const SizedBox(height: 16),
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(labelText: 'اسم مزود الخدمة'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: phoneController,
+              decoration: InputDecoration(labelText: 'رقم الهاتف'),
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: selectedGovernorate,
+              items: iraqGovernorates
+                  .map((g) => DropdownMenuItem(value: g, child: Text(g)))
+                  .toList(),
+              onChanged: (val) => setState(() => selectedGovernorate = val),
+              decoration: InputDecoration(labelText: 'المحافظة'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: areaController,
+              decoration: InputDecoration(labelText: 'المنطقة'),
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: selectedService,
+              items: weddingServices
+                  .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                  .toList(),
+              onChanged: (val) => setState(() => selectedService = val),
+              decoration: InputDecoration(labelText: 'نوع الخدمة المقدمة'),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'صور الخدمة (إضافية)',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              icon: Icon(Icons.add_photo_alternate),
+              label: Text('إضافة صور الخدمة'),
+              onPressed: pickServiceImages,
+            ),
+            const SizedBox(height: 8),
+            if (serviceImages.isNotEmpty)
+              SizedBox(
+                height: 100,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: serviceImages
+                      .map(
+                        (imgPath) => Container(
+                          margin: EdgeInsets.only(right: 8),
+                          child: Image.file(
+                            File(imgPath),
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            const SizedBox(height: 12),
+            Text('صورة الخدمة', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () async {
+                // TODO: إضافة منطق اختيار الصورة من المعرض
+              },
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey),
+                ),
+                child: imagePath == null
+                    ? Icon(Icons.add_a_photo, size: 40, color: Colors.grey)
+                    : Image.file(File(imagePath!), fit: BoxFit.cover),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  if (nameController.text.isEmpty ||
+                      phoneController.text.isEmpty ||
+                      selectedGovernorate == null ||
+                      selectedService == null ||
+                      areaController.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('يرجى إدخال جميع الحقول المطلوبة'),
+                      ),
+                    );
+                    return;
+                  }
+
+                  // إذا كانت الخدمة تصوير أو جلسات تصوير، فتح شاشة التسجيل الخاصة
+                  if (selectedService == 'التصوير' ||
+                      selectedService == 'جلسات تصوير') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PhotographyRegistrationScreen(
+                          providerId: phoneController.text,
+                          providerName: nameController.text,
+                          providerPhone: phoneController.text,
+                          governorate: selectedGovernorate!,
+                          area: areaController.text,
+                          profileImage: imagePath,
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
+                  try {
+                    // حفظ بيانات مزود الخدمة في SharedPreferences
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.setString('user_phone', phoneController.text);
+                    await prefs.setString('user_name', nameController.text);
+                    await prefs.setString('account_type', 'provider');
+
+                    // إرسال طلب مزود خدمة للمالك
+                    await FirebaseFirestore.instance
+                        .collection('provider_requests')
+                        .add({
+                          'name': nameController.text,
+                          'phone': phoneController.text,
+                          'governorate': selectedGovernorate,
+                          'area': areaController.text,
+                          'serviceType': selectedService,
+                          'imagePath': imagePath,
+                          'serviceImages': serviceImages,
+                          'status': 'pending',
+                          'createdAt': FieldValue.serverTimestamp(),
+                        });
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          'تم إرسال الطلب بنجاح! سيتم مراجعته من قبل الإدارة',
+                        ),
+                      ),
+                    );
+
+                    // الانتقال لحساب مزود خدمة
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MainNavigationScreen(),
+                      ),
+                      (route) => false,
+                    );
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('حدث خطأ أثناء إرسال الطلب: $e')),
+                    );
+                  }
+                },
+                child: Text('إرسال الطلب وإنشاء حساب مزود خدمة'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ...existing code...
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  // ...existing code...
+  // نهاية الكلاس يجب أن تكون هنا فقط بعد جميع الدوال
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _areaController = TextEditingController();
+  // قائمة المحافظات العراقية
+  final List<String> _iraqGovernorates = [
+    'بغداد',
+    'البصرة',
+    'نينوى',
+    'أربيل',
+    'الأنبار',
+    'ذي قار',
+    'السليمانية',
+    'بابل',
+    'ديالى',
+    'كركوك',
+    'النجف',
+    'صلاح الدين',
+    'القادسية',
+    'واسط',
+    'ميسان',
+    'المثنى',
+    'دهوك',
+    'كربلاء',
+  ];
+  String? _selectedGovernorate;
+  bool _isLoading = false;
+  String? _error;
+  String? _accountType; // نوع الحساب: 'customer' أو 'provider'
+  // صورة الملف الشخصي (اختياري)
+  XFile? _pickedImage;
+
+  // تحقق من قوة كلمة المرور
+  bool _isPasswordStrong(String password) {
+    final regex = RegExp(
+      r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#\$&*~]).{8,}$',
+    );
+    return regex.hasMatch(password);
+  }
+
+  Future<void> _pickImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _pickedImage = image;
+      });
+    }
+  }
+
+  Future<void> _register() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    final name = _nameController.text.trim();
+    var phone = _phoneController.text.trim();
+    
+    // إضافة كود العراق تلقائياً إذا لم يبدأ بـ +
+    if (!phone.startsWith('+')) {
+      if (phone.startsWith('0')) {
+        phone = '+964${phone.substring(1)}'; // إزالة الصفر وإضافة +964
+      } else {
+        phone = '+964$phone'; // إضافة +964 مباشرة
+      }
+    }
+    
+    final password = _passwordController.text.trim();
+    final city = _selectedGovernorate;
+    final area = _areaController.text.trim();
+
+    if (name.isEmpty ||
+        phone.isEmpty ||
+        password.isEmpty ||
+        city == null ||
+        city.isEmpty ||
+        area.isEmpty) {
+      setState(() {
+        _error = 'يرجى إدخال جميع الحقول المطلوبة واختيار المحافظة والمنطقة';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    if (_accountType == null) {
+      setState(() {
+        _error = 'يرجى اختيار نوع الحساب';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    if (!_isPasswordStrong(password)) {
+      setState(() {
+        _error =
+            'كلمة المرور يجب أن تكون 8 أحرف على الأقل وتحتوي على حرف كبير وصغير ورقم ورمز.';
+        _isLoading = false;
+      });
+      return;
+    }
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(phone)
+          .get();
+      if (userDoc.exists) {
+        setState(() {
+          _error = 'رقم الهاتف مسجل مسبقًا';
+          _isLoading = false;
+        });
+        return;
+      }
+    } catch (e) {
+      print('خطأ في التحقق من المستخدم: $e');
+      // تجاهل الخطأ والمتابعة
+    }
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    // الانتقال إلى صفحة OTP بدلاً من إنشاء الحساب مباشرة
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RegisterWithOtpPage(
+          name: name,
+          phone: phone,
+          province: city,
+          creditCard: '', // يمكن إضافته لاحقاً إذا لزم الأمر
+          password: password,
+          accountType: _accountType ?? 'customer',
+          area: area,
+          profileImagePath: _pickedImage?.path,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'إنشاء حساب جديد',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF530405),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.07),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 8),
+                Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    GestureDetector(
+                      onTap: _pickImage,
+                      child: CircleAvatar(
+                        radius: 48,
+                        backgroundColor: const Color(0xFFF2E6E6),
+                        backgroundImage: _pickedImage != null
+                            ? FileImage(File(_pickedImage!.path))
+                            : null,
+                        child: _pickedImage == null
+                            ? const Icon(
+                                Icons.camera_alt,
+                                size: 40,
+                                color: Color(0xFFB46A6A),
+                              )
+                            : null,
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 4,
+                      right: 4,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Color(0xFFB46A6A),
+                          shape: BoxShape.circle,
+                        ),
+                        padding: const EdgeInsets.all(6),
+                        child: const Icon(
+                          Icons.edit,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _buildTextField(
+                  _nameController,
+                  'اسم المستخدم',
+                  Icons.person,
+                  iconColor: const Color(0xFF530405),
+                ),
+                const SizedBox(height: 12),
+                _buildTextField(
+                  _phoneController,
+                  'رقم الهاتف',
+                  Icons.phone,
+                  keyboardType: TextInputType.phone,
+                  iconColor: const Color(0xFF530405),
+                ),
+                const SizedBox(height: 12),
+                // حقل اختيار نوع الحساب
+                DropdownButtonFormField<String>(
+                  value: _accountType,
+                  items: [
+                    DropdownMenuItem(value: 'customer', child: Text('customer'.tr())),
+                    DropdownMenuItem(
+                      value: 'provider',
+                      child: Text('مزود خدمة'),
+                    ),
+                  ],
+                  iconEnabledColor: const Color(0xFF530405),
+                  iconDisabledColor: const Color(0xFF530405),
+                  onChanged: (val) {
+                    setState(() {
+                      _accountType = val;
+                    });
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'نوع الحساب',
+                    labelStyle: const TextStyle(color: Color(0xFF530405)),
+                    prefixIcon: const Icon(
+                      Icons.account_circle,
+                      color: Color(0xFF530405),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFFF8F6F6),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 16,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _selectedGovernorate,
+                  items: _iraqGovernorates
+                      .map(
+                        (g) => DropdownMenuItem(
+                          value: g,
+                          child: Text(g, style: const TextStyle(fontSize: 16)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (val) {
+                    setState(() {
+                      _selectedGovernorate = val;
+                    });
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'المحافظة',
+                    labelStyle: const TextStyle(color: Color(0xFF530405)),
+                    prefixIcon: const Icon(
+                      Icons.location_city,
+                      color: Color(0xFF530405),
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFFF8F6F6),
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 16,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildTextField(_areaController, 'المنطقة', Icons.location_on),
+                const SizedBox(height: 12),
+                _buildTextField(
+                  _passwordController,
+                  'كلمة المرور',
+                  Icons.lock,
+                  obscureText: true,
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    'اختر كلمة مرور قوية ولا تشاركها مع أي شخص.',
+                    style: TextStyle(color: Colors.blueGrey, fontSize: 13),
+                  ),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                ],
+                const SizedBox(height: 24),
+                _isLoading
+                    ? const CircularProgressIndicator()
+                    : SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF530405),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          onPressed: _register,
+                          child: const Text('register'.tr()),
+                        ),
+                      ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    int? maxLength,
+    Color? iconColor,
+  }) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      maxLength: maxLength,
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Color(0xFF530405)),
+        prefixIcon: Icon(icon, color: iconColor ?? const Color(0xFF530405)),
+        filled: true,
+        fillColor: const Color(0xFFF8F6F6),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 16,
+          horizontal: 16,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        counterText: maxLength != null
+            ? null
+            : '', // إخفاء العداد إذا لم يكن هناك حد أقصى
+      ),
+    );
+  }
+}

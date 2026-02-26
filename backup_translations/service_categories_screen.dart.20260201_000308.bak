@@ -1,0 +1,532 @@
+library;
+
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'item_detail_screen.dart';
+
+class ServiceCategoriesScreen extends StatefulWidget {
+  final String serviceId;
+  final String serviceName;
+
+  const ServiceCategoriesScreen({
+    super.key,
+    required this.serviceId,
+    required this.serviceName,
+  });
+
+  @override
+  State<ServiceCategoriesScreen> createState() =>
+      _ServiceCategoriesScreenState();
+}
+
+class _ServiceCategoriesScreenState extends State<ServiceCategoriesScreen> {
+  // جلب مزودي الخدمة المعتمدين لنوع خدمة معين
+  Future<List<Map<String, dynamic>>> _getApprovedProviders() async {
+    try {
+      print('🔍 جاري البحث عن مزودي الخدمة للخدمة: ${widget.serviceId}');
+
+      // البحث في مجموعة services عن الخدمات المعتمدة لهذا النوع
+      final servicesQuery = await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('items')
+          .where('isActive', isEqualTo: true)
+          .where('isApproved', isEqualTo: true) // فقط العناصر المعتمدة
+          .get();
+
+      print('📊 عدد العناصر الموجودة: ${servicesQuery.docs.length}');
+
+      // جمع معرفات مزودي الخدمة الفريدة
+      Set<String> providerIds = {};
+      Map<String, Map<String, dynamic>> providersData = {};
+
+      for (var doc in servicesQuery.docs) {
+        try {
+          final data = doc.data();
+          print('📄 بيانات العنصر: $data');
+
+          final providerId = data['providerId'] as String?;
+          if (providerId != null && providerId.isNotEmpty) {
+            providerIds.add(providerId);
+
+            // حفظ بيانات المزود الأساسية من العنصر
+            if (!providersData.containsKey(providerId)) {
+              providersData[providerId] = {
+                'providerId': providerId,
+                'providerName': (data['providerName'] ?? 'مزود خدمة')
+                    .toString(),
+                'location': (data['location'] ?? 'غير محدد').toString(),
+                'itemsCount': 1,
+                'serviceType': widget.serviceId,
+              };
+              print(
+                '✅ تم إضافة مزود جديد: ${data['providerName']} ($providerId)',
+              );
+            } else {
+              // زيادة عدد العناصر للمزود
+              providersData[providerId]!['itemsCount'] =
+                  (providersData[providerId]!['itemsCount'] as int) + 1;
+              print('📈 زيادة عدد العناصر للمزود: ${data['providerName']}');
+            }
+          } else {
+            print('❌ عنصر بدون providerId أو providerId فارغ: $data');
+          }
+        } catch (e) {
+          print('❌ خطأ في معالجة العنصر: $e');
+          continue; // تجاهل هذا العنصر والانتقال للتالي
+        }
+      }
+
+      print('🎯 عدد مزودي الخدمة النهائي: ${providersData.length}');
+      return providersData.values.toList();
+    } catch (e) {
+      print('❌ خطأ في جلب مزودي الخدمة: $e');
+      return [];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    print(
+      '🏗️ بناء ServiceCategoriesScreen للخدمة: ${widget.serviceId} - ${widget.serviceName}',
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'مزودو خدمة ${widget.serviceName}',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _getApprovedProviders(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'حدث خطأ في تحميل البيانات',
+                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => setState(() {}),
+                    child: const Text('إعادة المحاولة'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final providers = snapshot.data ?? [];
+
+          if (providers.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.store_outlined, size: 80, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'لا يوجد مزودو خدمة متاحون حالياً',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'سيظهر مزودو الخدمة عند إضافة عناصر معتمدة',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: providers.length,
+            itemBuilder: (context, index) {
+              final provider = providers[index];
+              final providerName = (provider['providerName'] ?? 'مزود خدمة')
+                  .toString();
+              final location = (provider['location'] ?? 'غير محدد').toString();
+              final itemsCount = provider['itemsCount'] as int? ?? 0;
+              final providerId = (provider['providerId'] ?? '').toString();
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    // التحقق من أن providerId ليس فارغاً قبل الانتقال
+                    if (providerId.isNotEmpty) {
+                      // الانتقال إلى صفحة عرض عناصر هذا المزود
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ProviderItemsScreen(
+                            serviceId: widget.serviceId,
+                            providerId: providerId,
+                            providerName: providerName,
+                          ),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('خطأ: معرف المزود غير صحيح'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        // أيقونة المتجر
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E88E5).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF1E88E5).withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.store,
+                            color: Color(0xFF1E88E5),
+                            size: 30,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // بيانات المزود
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                providerName,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on,
+                                    size: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      location,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[50],
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.green[200]!,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  '$itemsCount عنصر متاح',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.green[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // سهم للانتقال
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          color: Color(0xFF1E88E5),
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// شاشة عرض عناصر مزود خدمة معين
+class ProviderItemsScreen extends StatelessWidget {
+  final String serviceId;
+  final String providerId;
+  final String providerName;
+
+  const ProviderItemsScreen({
+    super.key,
+    required this.serviceId,
+    required this.providerId,
+    required this.providerName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'عناصر $providerName',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: const Color(0xFF1E88E5),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('services')
+            .doc(serviceId)
+            .collection('items')
+            .where('providerId', isEqualTo: providerId)
+            .where('isActive', isEqualTo: true)
+            .where('isApproved', isEqualTo: true) // فقط العناصر المعتمدة
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
+            );
+          }
+
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(
+              child: Text(
+                'لا توجد عناصر متاحة',
+                style: TextStyle(fontSize: 18, color: Color(0xFF90A4AE)),
+              ),
+            );
+          }
+
+          final items = snapshot.data!.docs;
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final data = item.data() as Map<String, dynamic>;
+              final name = (data['name'] ?? 'غير محدد').toString();
+              final details = (data['details'] ?? '').toString();
+              final price = (data['price'] ?? 'غير محدد').toString();
+              final imageUrls = data['imageUrls'] as List<dynamic>? ?? [];
+              final location = (data['location'] ?? 'غير محدد').toString();
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    // التنقل إلى صفحة تفاصيل العنصر
+                    final itemData = data;
+                    itemData['id'] = item.id;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ItemDetailScreen(
+                          item: itemData,
+                          providerId: providerId,
+                          serviceType: serviceId,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // صورة العنصر
+                      if (imageUrls.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
+                          ),
+                          child: Image.network(
+                            imageUrls[0],
+                            height: 200,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                height: 200,
+                                color: Colors.grey[200],
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.broken_image,
+                                    size: 50,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                      // تفاصيل العنصر
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (details.isNotEmpty) ...[
+                              Text(
+                                details,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  size: 16,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    location,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '$price دينار',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E88E5),
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    // التنقل إلى صفحة تفاصيل العنصر للحجز
+                                    final itemData = data;
+                                    itemData['id'] = item.id;
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => ItemDetailScreen(
+                                          item: itemData,
+                                          providerId: providerId,
+                                          serviceType: serviceId,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1E88E5),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text('احجز الآن'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}

@@ -1,0 +1,2533 @@
+import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
+import '../utils/price_formatter.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'services_screen.dart' show ServicesScreen;
+import 'fazaa_screen.dart';
+import '../widgets/custom_page_title.dart';
+import '../widgets/language_changer_dialog.dart';
+import 'my_bookings_screen.dart';
+import 'splash_screen.dart';
+import 'service_management_screens.dart';
+import 'provider_dashboard_screen.dart';
+import 'admin_provider_requests_screen.dart';
+import 'chats_list_screen.dart';
+import 'provider_bookings_screen.dart';
+
+// متغيرات عامة
+String? currentUserId;
+bool hasSubmittedInitialServices = false;
+List<Map<String, dynamic>> services = [];
+Map<String, List<Map<String, dynamic>>> serviceItems = {};
+Map<String, List<Map<String, dynamic>>> pendingItems = {};
+// إدارة الخدمات والعناصر بعد الموافقة الأولية
+Widget _buildServicesManagement() {
+  return ListView.builder(
+    itemCount: services.length,
+    itemBuilder: (context, index) {
+      final service = services[index];
+      final serviceId = service['id'];
+      final items = serviceItems[serviceId] ?? [];
+      final pendings = pendingItems[serviceId] ?? [];
+      return Card(
+        margin: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  service['images'] != null && service['images'].isNotEmpty
+                      ? Image.network(
+                          service['images'][0],
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.image, color: Colors.grey),
+                        ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          service['name'] ?? 'خدمة',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        Text(
+                          service['governorate'] ?? 'المحافظة',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                        Text(
+                          '${PriceFormatter.formatString('${service['price'] ?? '0'}')} دينار',
+                          style: const TextStyle(
+                            color: Color(0xFFB46A6A),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                service['description'] ?? 'لا يوجد وصف',
+                style: TextStyle(color: Colors.grey[700]),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.calendar_today, size: 18),
+                      label: const Text('التقويم'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFB46A6A),
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        // ...التقويم...
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.edit, size: 18),
+                    label: const Text('edit'.tr()),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      // ...تعديل الخدمة...
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.delete, size: 18),
+                    label: const Text('delete'.tr()),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () {
+                      // ...حذف الخدمة...
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Divider(),
+              const Text(
+                'عناصر الخدمة المعتمدة:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              ...items.map(
+                (item) => ListTile(
+                  leading: item['images'] != null && item['images'].isNotEmpty
+                      ? Image.network(
+                          item['images'][0],
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                        )
+                      : const Icon(Icons.image),
+                  title: Text(item['name'] ?? ''),
+                  subtitle: Text(item['details'] ?? ''),
+                  trailing: Text('${item['price'] ?? ''} د.ع'),
+                ),
+              ),
+              const Divider(),
+              if (pendings.isNotEmpty)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'عناصر بانتظار الموافقة:',
+                      style: TextStyle(color: Colors.orange),
+                    ),
+                    ...pendings.map(
+                      (item) => ListTile(
+                        leading:
+                            item['images'] != null && item['images'].isNotEmpty
+                            ? Image.network(
+                                item['images'][0],
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                              )
+                            : const Icon(Icons.image),
+                        title: Text(item['name'] ?? ''),
+                        subtitle: Text(item['details'] ?? ''),
+                        trailing: Text('${item['price'] ?? ''} د.ع'),
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                icon: Icon(Icons.add),
+                label: Text('إضافة عنصر جديد'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple,
+                ),
+                onPressed: () async {
+                  // ...إضافة عنصر جديد...
+                },
+              ),
+              SizedBox(height: 8),
+              if (pendings.isNotEmpty)
+                ElevatedButton.icon(
+                  icon: Icon(Icons.send),
+                  label: Text('إرسال جميع العناصر للمالك'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                  ),
+                  onPressed: () async {
+                    // ...إرسال العناصر للمالك...
+                  },
+                ),
+            ], // نهاية children
+          ), // نهاية Padding
+        ), // نهاية Card
+      ); // نهاية itemBuilder
+    }, // نهاية ListView.builder
+  ); // نهاية _buildServicesManagement
+}
+
+// دالة لنقل الخدمة من pending_services إلى approved_services عند الموافقة
+Future<void> approveService(String serviceId) async {
+  try {
+    final pendingDoc = await FirebaseFirestore.instance
+        .collection('pending_services')
+        .doc(serviceId)
+        .get();
+    if (pendingDoc.exists) {
+      final serviceData = pendingDoc.data();
+      await FirebaseFirestore.instance
+          .collection('approved_services')
+          .doc(serviceId)
+          .set(serviceData!);
+      await FirebaseFirestore.instance
+          .collection('pending_services')
+          .doc(serviceId)
+          .delete();
+      // يمكنك هنا إضافة منطق إضافي مثل إشعار المزود أو تحديث واجهة المستخدم
+    }
+  } catch (e) {
+    print('خطأ أثناء الموافقة على الخدمة: $e');
+  }
+}
+
+// كشف الحساب البياني لمزود الخدمة
+class AccountStatementSection extends StatefulWidget {
+  final String providerId;
+  const AccountStatementSection({super.key, required this.providerId});
+
+  @override
+  State<AccountStatementSection> createState() =>
+      _AccountStatementSectionState();
+}
+
+class _AccountStatementSectionState extends State<AccountStatementSection> {
+  bool showAll = false;
+
+  Future<List<Map<String, dynamic>>> _fetchAllBookings() async {
+    final bookingsSnapshot = await FirebaseFirestore.instance
+        .collection('bookings')
+        .where('providerId', isEqualTo: widget.providerId)
+        .orderBy('createdAt', descending: true)
+        .get();
+    return bookingsSnapshot.docs.map((doc) {
+      final data = doc.data();
+      data['id'] = doc.id;
+      return data;
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _fetchAllBookings(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'حدث خطأ أثناء تحميل الحجوزات. تأكد من وجود الحقل createdAt في كل حجز أو تحقق من اتصال الإنترنت.\n${snapshot.error}',
+              style: const TextStyle(color: Colors.red, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final bookings = snapshot.data!;
+        final approved = bookings
+            .where((b) => b['status'] == 'approved')
+            .toList();
+        final rejected = bookings
+            .where((b) => b['status'] == 'rejected')
+            .toList();
+        final total = bookings.length;
+
+        if (!showAll) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildSummaryTile(
+                        'إجمالي الحجوزات',
+                        total,
+                        Icons.list_alt,
+                        const Color(0xFF530405),
+                      ),
+                      _buildSummaryTile(
+                        'الموافق عليها',
+                        approved.length,
+                        Icons.check_circle,
+                        Colors.green,
+                      ),
+                      _buildSummaryTile(
+                        'المرفوضة',
+                        rejected.length,
+                        Icons.cancel,
+                        Colors.red,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 12),
+              SizedBox(height: 12),
+              Center(
+                child: ElevatedButton.icon(
+                  icon: Icon(Icons.receipt_long),
+                  label: Text('view_all_bookings'.tr()),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFB46A6A),
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => setState(() => showAll = true),
+                ),
+              ),
+            ],
+          );
+        } else {
+          if (bookings.isEmpty) {
+            return Center(
+              child: Text(
+                'لا توجد حجوزات بعد.',
+                style: TextStyle(color: Colors.grey[600], fontSize: 14),
+              ),
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'جميع الحجوزات',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  TextButton.icon(
+                    icon: Icon(Icons.arrow_back),
+                    label: Text('back'.tr()),
+                    onPressed: () => setState(() => showAll = false),
+                  ),
+                ],
+              ),
+              Divider(),
+              ListView.separated(
+                shrinkWrap: true,
+                physics: NeverScrollableScrollPhysics(),
+                itemCount: bookings.length,
+                separatorBuilder: (context, i) => Divider(),
+                itemBuilder: (context, i) {
+                  final booking = bookings[i];
+                  final customerName = booking['customerName'] ?? 'غير محدد';
+                  final details = booking['details'] ?? '';
+                  final price = (booking['price'] ?? 0).toString();
+                  final status = booking['status'] ?? '';
+                  final createdAt = booking['createdAt'];
+                  String dateStr = '';
+                  if (createdAt is Timestamp) {
+                    final dt = createdAt.toDate();
+                    dateStr =
+                        '${dt.year}/${dt.month.toString().padLeft(2, '0')}/${dt.day.toString().padLeft(2, '0')}';
+                  }
+                  return ListTile(
+                    leading: Icon(
+                      status == 'approved' ? Icons.check_circle : Icons.cancel,
+                      color: status == 'approved' ? Colors.green : Colors.red,
+                    ),
+                    title: Text('الزبون: $customerName'),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (details.isNotEmpty) Text('تفاصيل: $details'),
+                        if (dateStr.isNotEmpty) Text('تاريخ: $dateStr'),
+                        Text(
+                          'الحالة: ${status == 'approved' ? 'موافق عليه' : 'مرفوض'}',
+                        ),
+                      ],
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          '$price د.ع',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        Text(
+                          'السعر',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildSummaryTile(
+    String label,
+    int value,
+    IconData icon,
+    Color color,
+  ) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 32),
+        SizedBox(height: 4),
+        Text(
+          '$value',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        Text(label, style: TextStyle(fontSize: 13, color: Colors.grey[700])),
+      ],
+    );
+  }
+}
+
+// شاشة الدعم الفني لمزود الخدمة (تعريف مؤقت)
+class ProviderSupportScreen extends StatelessWidget {
+  const ProviderSupportScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('الدعم الفني')),
+      body: Center(child: Text('صفحة الدعم الفني لمزود الخدمة')),
+    );
+  }
+}
+
+class MainNavigationScreen extends StatefulWidget {
+  final bool isAdmin;
+  const MainNavigationScreen({super.key, this.isAdmin = false});
+
+  @override
+  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+}
+
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  int _selectedIndex = 0;
+
+  String? _currentUserId;
+  String _providerName = 'مزود الخدمة';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentUserId();
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final phone = prefs.getString('user_phone');
+    final name = prefs.getString('user_name') ?? 'مزود الخدمة';
+    setState(() {
+      _currentUserId = phone ?? '';
+      _providerName = name;
+    });
+    print(
+      'Loaded currentUserId: $_currentUserId, providerName: $_providerName',
+    );
+  }
+
+  List<Widget> get _pages {
+    if (widget.isAdmin) {
+      // صفحات مزود الخدمة
+      return [
+        ProviderDashboardNew(
+          providerId: _currentUserId ?? '',
+          providerName: _providerName,
+        ), // الصفحة الرئيسية لمزود الخدمة
+        ProviderBookingsScreen(), // الحجوزات
+        ProviderAccountScreen(), // الحساب
+        ProviderSupportScreen(), // الدعم الفني
+      ];
+    } else {
+      // صفحات العميل العادي
+      return [
+        ServicesScreen(), // الرئيسية
+        MyBookingsScreen(), // حجوزاتي
+        const ChatsListScreen(), // المحادثات
+        FazaaScreen(), // فزعة
+        ProfileScreen(), // الملف الشخصي
+      ];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_currentUserId == null) {
+      // إظهار شاشة تسجيل الدخول مع زر للانتقال إلى شاشة إنشاء حساب
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'يرجى تسجيل الدخول أولاً',
+                style: TextStyle(fontSize: 20),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
+                },
+                child: const Text('login'.tr()),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        statusBarBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        backgroundColor: const Color.fromARGB(255, 216, 208, 208),
+        body: IndexedStack(index: _selectedIndex, children: _pages),
+        bottomNavigationBar: Directionality(
+          textDirection: ui.TextDirection.ltr,
+          child: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            currentIndex: _selectedIndex,
+            onTap: (index) => setState(() => _selectedIndex = index),
+            selectedItemColor: const Color(0xFFB46A6A),
+            unselectedItemColor: Colors.grey,
+            elevation: 8,
+            backgroundColor: Colors.white,
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            items: widget.isAdmin
+                ? const [
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.dashboard),
+                      label: 'لوحة التحكم',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.book_online),
+                      label: 'الحجوزات',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.account_circle),
+                      label: 'الحساب',
+                    ),
+                    BottomNavigationBarItem(
+                      icon: Icon(Icons.support_agent),
+                      label: 'الدعم الفني',
+                    ),
+                  ]
+                : [
+                    BottomNavigationBarItem(
+                      icon: const Icon(Icons.home),
+                      label: 'services'.tr(),
+                    ),
+                    BottomNavigationBarItem(
+                      icon: const Icon(Icons.book),
+                      label: 'bookings'.tr(),
+                    ),
+                    BottomNavigationBarItem(
+                      icon: const Icon(Icons.chat),
+                      label: tr('chats'),
+                    ),
+                    BottomNavigationBarItem(
+                      icon: const Icon(Icons.people_alt),
+                      label: tr('fazaa'),
+                    ),
+                    BottomNavigationBarItem(
+                      icon: const Icon(Icons.person),
+                      label: 'profile'.tr(),
+                    ),
+                  ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// شاشة الحساب (فارغة مؤقتاً)
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  String? _userId;
+  Map<String, dynamic>? _userData;
+  int _bookingsCount = 0;
+  bool _isLoading = true;
+  bool _notificationsEnabled = true;
+  final ImagePicker _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('user_phone');
+
+      print('🔍 محاولة تحميل بيانات المستخدم لرقم: $userId');
+
+      if (userId == null) {
+        print('❌ لا يوجد user_phone في SharedPreferences');
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      setState(() => _userId = userId);
+
+      // تحميل بيانات المستخدم
+      print('📥 جلب بيانات المستخدم من Firestore...');
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      Map<String, dynamic>? userData;
+
+      if (userDoc.exists) {
+        userData = userDoc.data();
+        print('✅ تم العثور على بيانات المستخدم:');
+        print('   📄 البيانات الكاملة: $userData');
+      } else {
+        print('⚠️ لم يتم العثور على مستند بالمعرف: $userId');
+        print('🔄 محاولة البحث برقم الهاتف في حقل phone...');
+
+        // محاولة البحث برقم الهاتف في حقل phone
+        final querySnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('phone', isEqualTo: userId)
+            .limit(1)
+            .get();
+
+        if (querySnapshot.docs.isNotEmpty) {
+          userData = querySnapshot.docs.first.data();
+          print('✅ تم العثور على المستخدم عبر البحث:');
+          print('   📄 البيانات الكاملة: $userData');
+        } else {
+          print('❌ لم يتم العثور على المستخدم نهائياً!');
+        }
+      }
+
+      // إثراء البيانات بجلب المحافظة والمنطقة من مصادر متعددة
+      if (userData != null) {
+        print('🔍 محاولة إثراء بيانات المستخدم...');
+        print(
+          '   📍 قبل: governorate="${userData['governorate']}", city="${userData['city']}", area="${userData['area']}"',
+        );
+
+        String? finalGov = userData['governorate'] ?? userData['city'];
+        String? finalArea = userData['area'];
+
+        // 1. محاولة جلب من users (قد يكون هناك تحديث)
+        if ((finalGov == null || finalGov.isEmpty) ||
+            (finalArea == null || finalArea.isEmpty)) {
+          try {
+            final userDocRefresh = await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
+                .get();
+
+            if (userDocRefresh.exists) {
+              final refreshData = userDocRefresh.data();
+              finalGov =
+                  finalGov ??
+                  refreshData?['governorate'] ??
+                  refreshData?['city'];
+              finalArea = finalArea ?? refreshData?['area'];
+              print(
+                '   📱 users (refresh): gov="$finalGov", area="$finalArea"',
+              );
+            }
+          } catch (e) {
+            print('   ❌ users refresh: خطأ - $e');
+          }
+        }
+
+        // 2. محاولة جلب من providers إذا كان مزود خدمة
+        if ((finalGov == null || finalGov.isEmpty) ||
+            (finalArea == null || finalArea.isEmpty)) {
+          try {
+            final providerDoc = await FirebaseFirestore.instance
+                .collection('providers')
+                .doc(userId)
+                .get();
+
+            if (providerDoc.exists) {
+              final providerData = providerDoc.data();
+              finalGov = finalGov ?? providerData?['governorate'];
+              finalArea = finalArea ?? providerData?['area'];
+              print('   🏢 providers: gov="$finalGov", area="$finalArea"');
+            }
+          } catch (e) {
+            print('   ❌ providers: خطأ - $e');
+          }
+        }
+
+        // 3. محاولة جلب من provider_services
+        if ((finalGov == null || finalGov.isEmpty) ||
+            (finalArea == null || finalArea.isEmpty)) {
+          try {
+            final serviceDoc = await FirebaseFirestore.instance
+                .collection('provider_services')
+                .doc(userId)
+                .get();
+
+            if (serviceDoc.exists) {
+              final serviceData = serviceDoc.data();
+              finalGov =
+                  finalGov ??
+                  serviceData?['governorate'] ??
+                  serviceData?['providerGovernorate'];
+              finalArea = finalArea ?? serviceData?['area'];
+              print(
+                '   🎯 provider_services: gov="$finalGov", area="$finalArea"',
+              );
+            }
+          } catch (e) {
+            print('   ❌ provider_services: خطأ - $e');
+          }
+        }
+
+        // تطبيق القيم النهائية
+        if (finalGov != null && finalGov.isNotEmpty) {
+          userData['governorate'] = finalGov;
+          userData['city'] = finalGov;
+        }
+        if (finalArea != null && finalArea.isNotEmpty) {
+          userData['area'] = finalArea;
+        }
+
+        print(
+          '   📍 بعد: governorate="${userData['governorate']}", area="${userData['area']}"',
+        );
+        print('✅ اكتمل إثراء البيانات');
+      }
+
+      setState(() => _userData = userData);
+
+      print('   👤 الاسم: ${userData?['name']}');
+      print('   📍 المحافظة (governorate): ${userData?['governorate']}');
+      print('   📍 المحافظة (city): ${userData?['city']}');
+      print('   📍 المنطقة: ${userData?['area']}');
+      print('   📞 الهاتف: ${userData?['phone']}');
+
+      // حساب عدد الحجوزات المقبولة
+      print('📊 حساب عدد الحجوزات...');
+      final bookingsQuery = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('customerId', isEqualTo: userId)
+          .where('isCancelled', isEqualTo: false)
+          .get();
+
+      print('✅ عدد الحجوزات المقبولة: ${bookingsQuery.docs.length}');
+
+      // تحميل حالة الإشعارات
+      final notifEnabled = prefs.getBool('notifications_enabled') ?? true;
+
+      setState(() {
+        _bookingsCount = bookingsQuery.docs.length;
+        _notificationsEnabled = notifEnabled;
+        _isLoading = false;
+      });
+
+      print('✅ اكتمل تحميل بيانات الملف الشخصي');
+    } catch (e) {
+      print('❌ خطأ في تحميل البيانات: $e');
+      print('❌ تفاصيل الخطأ: ${e.toString()}');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _updateProfileImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+
+      if (image == null || _userId == null) return;
+
+      // عرض مؤشر التحميل
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // رفع الصورة إلى Firebase Storage
+      final ref = FirebaseStorage.instance.ref().child(
+        'profile_images/$_userId.jpg',
+      );
+
+      await ref.putData(await image.readAsBytes());
+      final imageUrl = await ref.getDownloadURL();
+
+      // تحديث قاعدة البيانات
+      await FirebaseFirestore.instance.collection('users').doc(_userId).update({
+        'profileImage': imageUrl,
+      });
+
+      Navigator.of(context).pop(); // إغلاق مؤشر التحميل
+
+      setState(() {
+        _userData!['profileImage'] = imageUrl;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تحديث صورة الملف الشخصي بنجاح'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      Navigator.of(context).pop(); // إغلاق مؤشر التحميل
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطأ في تحديث الصورة: $e')));
+    }
+  }
+
+  Future<void> _showEditProfileDialog() async {
+    final nameController = TextEditingController(
+      text: _userData?['name'] ?? '',
+    );
+    final areaController = TextEditingController(
+      text: _userData?['area'] ?? '',
+    );
+
+    // قائمة المحافظات العراقية
+    final List<String> iraqGovernorates = [
+      'بغداد',
+      'البصرة',
+      'نينوى',
+      'أربيل',
+      'الأنبار',
+      'ذي قار',
+      'السليمانية',
+      'بابل',
+      'ديالى',
+      'كركوك',
+      'النجف',
+      'صلاح الدين',
+      'القادسية',
+      'واسط',
+      'ميسان',
+      'المثنى',
+      'دهوك',
+      'كربلاء',
+    ];
+
+    String? selectedGovernorate =
+        _userData?['governorate'] ?? _userData?['city'];
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 500),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF2B0606), Color(0xFF5D1414)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(24),
+                      topRight: Radius.circular(24),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.edit,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'تعديل الملف الشخصي',
+                              style: TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'قم بتحديث معلوماتك الشخصية',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Form Fields
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'الاسم الكامل',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2B0606),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: nameController,
+                        decoration: InputDecoration(
+                          hintText: 'أدخل اسمك الكامل',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF2B0606),
+                              width: 2,
+                            ),
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.person_outline,
+                            color: Color(0xFF2B0606),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      const Text(
+                        'المحافظة',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2B0606),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      StatefulBuilder(
+                        builder:
+                            (BuildContext context, StateSetter setStateDialog) {
+                              return Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade50,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.grey.shade300,
+                                  ),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: selectedGovernorate,
+                                    isExpanded: true,
+                                    hint: const Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.location_city_outlined,
+                                            color: Color(0xFF2B0606),
+                                          ),
+                                          SizedBox(width: 12),
+                                          Text('اختر المحافظة'),
+                                        ],
+                                      ),
+                                    ),
+                                    items: iraqGovernorates.map((
+                                      String governorate,
+                                    ) {
+                                      return DropdownMenuItem<String>(
+                                        value: governorate,
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(
+                                                Icons.location_city_outlined,
+                                                color: Color(0xFF2B0606),
+                                                size: 20,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Text(governorate),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (String? newValue) {
+                                      setStateDialog(() {
+                                        selectedGovernorate = newValue;
+                                      });
+                                    },
+                                    icon: const Padding(
+                                      padding: EdgeInsets.only(right: 12),
+                                      child: Icon(
+                                        Icons.arrow_drop_down,
+                                        color: Color(0xFF2B0606),
+                                      ),
+                                    ),
+                                    dropdownColor: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 4,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                      ),
+                      const SizedBox(height: 20),
+
+                      const Text(
+                        'المنطقة',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2B0606),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: areaController,
+                        decoration: InputDecoration(
+                          hintText: 'أدخل اسم المنطقة',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF2B0606),
+                              width: 2,
+                            ),
+                          ),
+                          prefixIcon: const Icon(
+                            Icons.location_on_outlined,
+                            color: Color(0xFF2B0606),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Buttons
+                Container(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            side: const BorderSide(color: Color(0xFF2B0606)),
+                            foregroundColor: const Color(0xFF2B0606),
+                          ),
+                          child: const Text(
+                            'إلغاء',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2B0606),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.check_circle_outline, size: 20),
+                              SizedBox(width: 8),
+                              Text(
+                                'حفظ التغييرات',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (result == true) {
+      if (nameController.text.isEmpty ||
+          selectedGovernorate == null ||
+          areaController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: Colors.white),
+                SizedBox(width: 12),
+                Text('يرجى إكمال جميع الحقول'),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+          ),
+        );
+        return;
+      }
+
+      try {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(color: Color(0xFF2B0606)),
+          ),
+        );
+
+        // تحديث كل من governorate و city للتوافق
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_userId)
+            .update({
+              'name': nameController.text,
+              'governorate': selectedGovernorate,
+              'city': selectedGovernorate,
+              'area': areaController.text,
+            });
+
+        Navigator.of(context).pop(); // إغلاق مؤشر التحميل
+
+        setState(() {
+          _userData!['name'] = nameController.text;
+          _userData!['governorate'] = selectedGovernorate;
+          _userData!['city'] = selectedGovernorate;
+          _userData!['area'] = areaController.text;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'تم تحديث البيانات بنجاح',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+          ),
+        );
+      } catch (e) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(child: Text('خطأ في التحديث: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleNotifications(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('notifications_enabled', value);
+
+      setState(() {
+        _notificationsEnabled = value;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(value ? 'تم تفعيل الإشعارات' : 'تم تعطيل الإشعارات'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطأ: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const String ownerPhone = '07721874360';
+
+    if (_isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final name = _userData?['name'] ?? 'مستخدم';
+    final phone = _userData?['phone'] ?? _userId ?? '';
+    final governorate =
+        _userData?['governorate'] ?? _userData?['city'] ?? 'غير محدد';
+    final area = _userData?['area'] ?? 'غير محدد';
+    final profileImage = _userData?['profileImage'];
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        title: const Text(
+          'الملف الشخصي',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF530405),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // صورة الملف الشخصي
+            Center(
+              child: Stack(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF2B0606),
+                        width: 3,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: CircleAvatar(
+                      radius: 60,
+                      backgroundColor: Colors.white,
+                      backgroundImage: profileImage != null
+                          ? NetworkImage(profileImage)
+                          : null,
+                      child: profileImage == null
+                          ? Text(
+                              name[0].toUpperCase(),
+                              style: const TextStyle(
+                                fontSize: 40,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF2B0606),
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: InkWell(
+                      onTap: _updateProfileImage,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2B0606),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.3),
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              name,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2B0606),
+              ),
+            ),
+            Text(
+              phone,
+              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 24),
+
+            // المعلومات الشخصية
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'المعلومات الشخصية',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2B0606),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            _buildInfoCard(icon: Icons.person, title: 'الاسم', value: name),
+            const SizedBox(height: 8),
+
+            _buildInfoCard(
+              icon: Icons.phone,
+              title: 'رقم الهاتف',
+              value: phone,
+            ),
+            const SizedBox(height: 8),
+
+            _buildInfoCard(
+              icon: Icons.location_city,
+              title: 'المحافظة',
+              value: governorate,
+            ),
+            const SizedBox(height: 8),
+
+            _buildInfoCard(
+              icon: Icons.location_on,
+              title: 'المنطقة',
+              value: area,
+            ),
+            const SizedBox(height: 20),
+
+            // زر تعديل الملف الشخصي
+            ElevatedButton.icon(
+              onPressed: _showEditProfileDialog,
+              icon: const Icon(Icons.edit),
+              label: const Text('تعديل الملف الشخصي'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // الإعدادات
+            const Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                'الإعدادات',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2B0606),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // الإشعارات
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2B0606).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.notifications,
+                    color: Color(0xFF2B0606),
+                  ),
+                ),
+                title: const Text(
+                  'الإشعارات',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                trailing: Switch(
+                  value: _notificationsEnabled,
+                  onChanged: _toggleNotifications,
+                  activeColor: const Color(0xFF2B0606),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // زر خاص بالمالك
+            if (phone == ownerPhone) ...[
+              ElevatedButton.icon(
+                icon: const Icon(Icons.assignment),
+                label: const Text('طلبات مزودي الخدمة المرسلة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E88E5),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AdminProviderRequestsScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // زر تغيير اللغة
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2B0606).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.language, color: Color(0xFF2B0606)),
+                ),
+                title: const Text(
+                  'اللغة',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                ),
+                subtitle: const Text(
+                  'تغيير لغة التطبيق',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () {
+                  LanguageChangerDialog.show(context);
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // زر تسجيل الخروج
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.red,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Colors.red),
+                ),
+                minimumSize: const Size(double.infinity, 50),
+              ),
+              icon: const Icon(Icons.logout),
+              label: const Text(
+                'تسجيل الخروج',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              onPressed: () => _handleLogout(),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard({
+    required IconData icon,
+    required String title,
+    required String value,
+  }) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2B0606).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: const Color(0xFF2B0606)),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+        subtitle: Text(
+          value,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('تأكيد تسجيل الخروج'),
+          content: const Text('هل أنت متأكد من أنك تريد تسجيل الخروج؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('cancel'.tr()),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('logout'.tr()),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldLogout == true) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final phone = prefs.getString('user_phone');
+
+        if (phone != null && phone.isNotEmpty) {
+          try {
+            final sessionDoc = FirebaseFirestore.instance
+                .collection('sessions')
+                .doc(phone);
+
+            final docSnapshot = await sessionDoc.get();
+            if (docSnapshot.exists) {
+              await sessionDoc.update({'active': false});
+            }
+          } catch (e) {
+            print('خطأ في تحديث حالة الجلسة: $e');
+          }
+        }
+
+        await prefs.clear();
+
+        currentUserId = null;
+        hasSubmittedInitialServices = false;
+        services.clear();
+        serviceItems.clear();
+        pendingItems.clear();
+
+        Navigator.of(context).pop();
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => SplashScreen()),
+          (route) => false,
+        );
+      } catch (e) {
+        Navigator.of(context).pop();
+
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+
+          currentUserId = null;
+          hasSubmittedInitialServices = false;
+          services.clear();
+          serviceItems.clear();
+          pendingItems.clear();
+
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => SplashScreen()),
+            (route) => false,
+          );
+        } catch (localError) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('حدث خطأ أثناء تسجيل الخروج: $localError'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+}
+
+class MyBookingsTabScreen extends StatelessWidget {
+  const MyBookingsTabScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color.fromARGB(255, 216, 208, 208),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            CustomPageTitle('حجوزاتي'),
+            Expanded(child: Center(child: const Text('قائمة الحجوزات'))),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// شاشة إضافة عناصر الخدمة لمزود الخدمة
+class ProviderServiceItemsScreen extends StatefulWidget {
+  const ProviderServiceItemsScreen({super.key});
+
+  @override
+  State<ProviderServiceItemsScreen> createState() =>
+      _ProviderServiceItemsScreenState();
+}
+
+class _ProviderServiceItemsScreenState
+    extends State<ProviderServiceItemsScreen> {
+  bool hasSubmittedInitialServices = false;
+  List<Map<String, dynamic>> services = [];
+  Map<String, List<Map<String, dynamic>>> serviceItems = {};
+  Map<String, List<Map<String, dynamic>>> pendingItems = {};
+  Map<String, dynamic>? providerInfo;
+  String? currentUserId;
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    currentUserId = prefs.getString('user_phone');
+    if (currentUserId != null) {
+      await _checkInitialSubmission();
+      if (hasSubmittedInitialServices) {
+        await _loadUserServices();
+        await _loadProviderInfo();
+        await _loadAllItems();
+      }
+    }
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  Future<void> _loadProviderInfo() async {
+    if (currentUserId == null) return;
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUserId)
+        .get();
+    if (userDoc.exists) {
+      providerInfo = userDoc.data();
+    }
+  }
+
+  Future<void> _loadAllItems() async {
+    serviceItems.clear();
+    pendingItems.clear();
+    for (var service in services) {
+      final serviceId = service['id'];
+      // العناصر المعتمدة
+      final itemsSnap = await FirebaseFirestore.instance
+          .collection('service_items')
+          .where('serviceId', isEqualTo: serviceId)
+          .get();
+      serviceItems[serviceId] = itemsSnap.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+      // العناصر المعلقة
+      final pendingSnap = await FirebaseFirestore.instance
+          .collection('pending_service_items')
+          .where('serviceId', isEqualTo: serviceId)
+          .get();
+      pendingItems[serviceId] = pendingSnap.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+    }
+    setState(() {});
+  }
+
+  Future<void> _checkInitialSubmission() async {
+    if (currentUserId == null) return;
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUserId)
+        .get();
+    if (userDoc.exists) {
+      final userData = userDoc.data() as Map<String, dynamic>;
+      hasSubmittedInitialServices =
+          userData['hasSubmittedInitialServices'] ?? false;
+    }
+  }
+
+  // جلب الخدمات المعتمدة فقط من approved_services
+  Future<void> _loadUserServices() async {
+    if (currentUserId == null) return;
+    final servicesSnapshot = await FirebaseFirestore.instance
+        .collection('approved_services')
+        .where('providerId', isEqualTo: currentUserId)
+        .get();
+    setState(() {
+      services = servicesSnapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: Text('خدماتي')),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!hasSubmittedInitialServices) {
+      return _buildInitialServiceForm();
+    } else {
+      return _buildServicesManagement();
+    }
+  }
+
+  Widget _buildInitialServiceForm() {
+    return ServiceFormScreen(
+      isInitial: true,
+      onSubmit: (serviceData) async {
+        await _submitInitialService(serviceData);
+      },
+    );
+  }
+
+  Future<void> _submitInitialService(Map<String, dynamic> serviceData) async {
+    if (currentUserId == null) return;
+    try {
+      final serviceRef = FirebaseFirestore.instance
+          .collection('pending_services')
+          .doc();
+      serviceData['id'] = serviceRef.id;
+      serviceData['providerId'] = currentUserId;
+      serviceData['createdAt'] = FieldValue.serverTimestamp();
+      serviceData['bookedDates'] = <String>[];
+      serviceData['status'] = 'pending';
+      if (!serviceData.containsKey('category') ||
+          serviceData['category'] == null ||
+          serviceData['category'].toString().isEmpty) {
+        serviceData['category'] = 'other';
+      }
+      await serviceRef.set(serviceData);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUserId)
+          .update({'hasSubmittedInitialServices': true});
+      await FirebaseFirestore.instance.collection('provider_requests').add({
+        'providerId': currentUserId,
+        'services': [serviceData],
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'type': 'initial_submission',
+      });
+      setState(() {
+        hasSubmittedInitialServices = true;
+        services = [serviceData];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إرسال الخدمة للموافقة بنجاح!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('حدث خطأ: $e')));
+    }
+  }
+}
+
+// صفحة الحساب لمزود الخدمة (محدثة)
+class ProviderAccountScreen extends StatefulWidget {
+  const ProviderAccountScreen({super.key});
+
+  @override
+  State<ProviderAccountScreen> createState() => _ProviderAccountScreenState();
+}
+
+class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
+  bool _showPersonalInfo = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<SharedPreferences>(
+      future: SharedPreferences.getInstance(),
+      builder: (context, prefsSnapshot) {
+        if (!prefsSnapshot.hasData) {
+          return Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        final prefs = prefsSnapshot.data!;
+        final currentUserId = prefs.getString('user_phone') ?? '';
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUserId)
+              .snapshots(),
+          builder: (context, userSnapshot) {
+            if (!userSnapshot.hasData) {
+              return Scaffold(body: Center(child: CircularProgressIndicator()));
+            }
+            final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+            final displayName = userData?['displayName'] ?? 'اسم مزود الخدمة';
+            final serviceName =
+                userData?['serviceName'] ??
+                userData?['serviceType'] ??
+                'الخدمة';
+            final phone = userData?['phone'] ?? currentUserId;
+            final profileImage = userData?['profileImage'] as String?;
+            final governorate = userData?['governorate'] ?? 'غير محدد';
+            final area = userData?['area'] ?? 'غير محدد';
+            final creditCard = userData?['creditCard'] ?? 'غير محدد';
+
+            return Scaffold(
+              backgroundColor: Colors.grey[100],
+              body: CustomScrollView(
+                slivers: [
+                  // AppBar مع اسم الخدمة واللون المطلوب
+                  SliverAppBar(
+                    expandedHeight: 180,
+                    pinned: true,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).appBarTheme.backgroundColor,
+                    flexibleSpace: FlexibleSpaceBar(
+                      centerTitle: true,
+                      title: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            serviceName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            displayName,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      background: Container(
+                        color: Theme.of(context).appBarTheme.backgroundColor,
+                        child: Center(
+                          child: profileImage != null
+                              ? CircleAvatar(
+                                  radius: 50,
+                                  backgroundImage: NetworkImage(profileImage),
+                                  backgroundColor: Colors.white,
+                                )
+                              : const CircleAvatar(
+                                  radius: 50,
+                                  backgroundColor: Colors.white,
+                                  child: Icon(
+                                    Icons.person,
+                                    size: 50,
+                                    color: Color(0xFF2B0606),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // المحتوى
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // معلومات الحساب - قابلة للضغط
+                          Card(
+                            elevation: 3,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _showPersonalInfo = !_showPersonalInfo;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'معلومات الحساب',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF2B0606),
+                                          ),
+                                        ),
+                                        Icon(
+                                          _showPersonalInfo
+                                              ? Icons.keyboard_arrow_up
+                                              : Icons.keyboard_arrow_down,
+                                          color: const Color(0xFF2B0606),
+                                        ),
+                                      ],
+                                    ),
+                                    if (_showPersonalInfo) ...[
+                                      const Divider(height: 24),
+                                      _buildInfoRow(
+                                        Icons.person,
+                                        'الاسم',
+                                        displayName,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoRow(
+                                        Icons.phone,
+                                        'رقم الهاتف',
+                                        phone,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoRow(
+                                        Icons.location_city,
+                                        'المحافظة',
+                                        governorate,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoRow(
+                                        Icons.location_on,
+                                        'المنطقة',
+                                        area,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildInfoRow(
+                                        Icons.credit_card,
+                                        'بطاقة الائتمان',
+                                        creditCard,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // كشف الحساب (بدون حقول الإيرادات)
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.receipt_long,
+                                color: const Color(0xFF530405),
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'كشف الحساب',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          AccountStatementSection(providerId: currentUserId),
+                          const SizedBox(height: 24),
+                          // زر تسجيل الخروج
+                          Center(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.logout),
+                              label: const Text('logout'.tr()),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF530405),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () async {
+                                // مربع حوار للتأكيد
+                                bool? shouldLogout = await showDialog<bool>(
+                                  context: context,
+                                  builder: (BuildContext context) {
+                                    return AlertDialog(
+                                      title: const Text('تأكيد تسجيل الخروج'),
+                                      content: const Text(
+                                        'هل أنت متأكد من أنك تريد تسجيل الخروج؟',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(context).pop(false),
+                                          child: const Text('cancel'.tr()),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(context).pop(true),
+                                          child: const Text('logout'.tr()),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+
+                                if (shouldLogout == true) {
+                                  // إظهار مؤشر التحميل
+                                  showDialog(
+                                    context: context,
+                                    barrierDismissible: false,
+                                    builder: (context) => const Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+
+                                  try {
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    final phone = prefs.getString('user_phone');
+
+                                    if (phone != null && phone.isNotEmpty) {
+                                      try {
+                                        // تحديث حالة الجلسة في Firestore بأمان
+                                        final sessionDoc = FirebaseFirestore
+                                            .instance
+                                            .collection('sessions')
+                                            .doc(phone);
+
+                                        final docSnapshot = await sessionDoc
+                                            .get();
+                                        if (docSnapshot.exists) {
+                                          await sessionDoc.update({
+                                            'active': false,
+                                          });
+                                        }
+                                      } catch (e) {
+                                        // تجاهل أخطاء Firestore وتابع عملية تسجيل الخروج
+                                        print('خطأ في تحديث حالة الجلسة: $e');
+                                      }
+                                    }
+
+                                    // حذف جميع البيانات المحلية
+                                    await prefs.clear();
+
+                                    // إعادة تعيين المتغيرات العامة العامة فقط
+                                    hasSubmittedInitialServices = false;
+                                    services.clear();
+                                    serviceItems.clear();
+                                    pendingItems.clear();
+
+                                    // إغلاق مؤشر التحميل والانتقال لشاشة البداية
+                                    Navigator.of(
+                                      context,
+                                    ).pop(); // إغلاق مؤشر التحميل
+                                    Navigator.pushAndRemoveUntil(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => SplashScreen(),
+                                      ),
+                                      (route) => false,
+                                    );
+                                  } catch (e) {
+                                    // إغلاق مؤشر التحميل في حال وجود خطأ
+                                    Navigator.of(context).pop();
+
+                                    // حتى لو فشل تحديث Firestore، قم بتسجيل الخروج محلياً
+                                    try {
+                                      final prefs =
+                                          await SharedPreferences.getInstance();
+                                      await prefs.clear();
+
+                                      hasSubmittedInitialServices = false;
+                                      services.clear();
+                                      serviceItems.clear();
+                                      pendingItems.clear();
+
+                                      Navigator.pushAndRemoveUntil(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => SplashScreen(),
+                                        ),
+                                        (route) => false,
+                                      );
+                                    } catch (localError) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'حدث خطأ أثناء تسجيل الخروج: $localError',
+                                          ),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2B0606).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: const Color(0xFF2B0606), size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: Color(0xFF2D3748),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// تسجيل دخول الزبون (واجهة مبسطة)
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('login'.tr())),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'مرحبًا بك في تطبيقنا',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 32),
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'رقم الهاتف',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.phone),
+              ),
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                // تنفيذ تسجيل الدخول
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => MainNavigationScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'تسجيل الدخول',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                // الانتقال إلى شاشة التسجيل
+              },
+              child: const Text(
+                'لا تملك حسابًا؟ سجل الآن',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// شاشة التسجيل (واجهة مبسطة)
+class SignupScreen extends StatelessWidget {
+  const SignupScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'إنشاء حساب',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: const Color(0xFF530405),
+        foregroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'إنشاء حساب جديد',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF530405),
+              ),
+            ),
+            const SizedBox(height: 32),
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'الاسم الكامل',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              decoration: InputDecoration(
+                labelText: 'رقم الهاتف',
+                border: OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.person, color: Color(0xFF530405)),
+              ),
+              keyboardType: TextInputType.phone,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              decoration: const InputDecoration(
+                labelText: 'البريد الإلكتروني',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.email, color: Color(0xFF530405)),
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'كلمة المرور',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.lock, color: Color(0xFF530405)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () {
+                // تنفيذ التسجيل ثم الانتقال للرئيسية كمثال
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MainNavigationScreen(),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF530405),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 32,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text('register'.tr()),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text(
+                'لديك حساب بالفعل؟ تسجيل الدخول',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

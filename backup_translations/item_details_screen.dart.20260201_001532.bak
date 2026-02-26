@@ -1,0 +1,1378 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'booking_screen.dart';
+import '../utils/chat_helper.dart';
+import '../utils/image_utils.dart';
+import '../utils/storage_helper.dart';
+import '../models/booking_model.dart';
+import '../services/share_service.dart';
+import '../services/favorite_service.dart';
+
+class ItemDetailsScreen extends StatefulWidget {
+  final Map<String, dynamic> item;
+  final String providerName;
+
+  const ItemDetailsScreen({
+    super.key,
+    required this.item,
+    required this.providerName,
+  });
+
+  @override
+  State<ItemDetailsScreen> createState() => _ItemDetailsScreenState();
+}
+
+class _ItemDetailsScreenState extends State<ItemDetailsScreen> {
+  final PageController _imagePageController = PageController();
+  int _currentImageIndex = 0;
+  List<String> bookedDates = [];
+  bool isLoadingBookedDates = true;
+  String? _userId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBookedDates();
+    _loadUserId();
+  }
+
+  Future<void> _loadUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final storedUserId = prefs.getString('user_phone');
+      setState(() {
+        _userId = storedUserId;
+      });
+
+      if (storedUserId != null) {
+        print('تم تحميل معرف المستخدم: $storedUserId');
+      }
+    } catch (e) {
+      print('خطأ في تحميل معرف المستخدم: $e');
+    }
+  }
+
+  Future<void> _loadBookedDates() async {
+    try {
+      final itemDoc = await FirebaseFirestore.instance
+          .collection('published_items')
+          .doc(widget.item['itemId'])
+          .get();
+
+      if (itemDoc.exists) {
+        final data = itemDoc.data();
+        setState(() {
+          bookedDates = List<String>.from(data?['bookedDates'] ?? []);
+          isLoadingBookedDates = false;
+        });
+      }
+    } catch (e) {
+      print('خطأ في تحميل التواريخ المحجوزة: $e');
+      setState(() {
+        isLoadingBookedDates = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _imagePageController.dispose();
+    super.dispose();
+  }
+
+  // Helper method to safely parse price from different data types
+  num _parsePrice(dynamic priceValue) {
+    if (priceValue == null) return 0;
+    if (priceValue is num) return priceValue;
+    if (priceValue is String) {
+      try {
+        return num.parse(priceValue);
+      } catch (e) {
+        return 0;
+      }
+    }
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = ImageUtils.getImages(widget.item);
+    final price = _parsePrice(widget.item['price']);
+
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          // App Bar مع الصور
+          SliverAppBar(
+            expandedHeight: 300,
+            pinned: true,
+            backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+            iconTheme: const IconThemeData(color: Colors.white),
+            flexibleSpace: FlexibleSpaceBar(
+              background: images.isNotEmpty
+                  ? Stack(
+                      children: [
+                        PageView.builder(
+                          controller: _imagePageController,
+                          onPageChanged: (index) {
+                            setState(() {
+                              _currentImageIndex = index;
+                            });
+                          },
+                          itemCount: images.length,
+                          itemBuilder: (context, index) {
+                            return FutureBuilder<String>(
+                              future: StorageHelper.getValidImageUrl(
+                                images[index].toString(),
+                              ),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor:
+                                          const AlwaysStoppedAnimation<Color>(
+                                            Color(0xFFB46A6A),
+                                          ),
+                                    ),
+                                  );
+                                }
+
+                                if (snapshot.hasError || !snapshot.hasData) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.image_not_supported,
+                                        size: 60,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                return Image.network(
+                                  snapshot.data!,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Container(
+                                      color: Colors.grey[300],
+                                      child: const Center(
+                                        child: Icon(
+                                          Icons.image_not_supported,
+                                          size: 60,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        ),
+
+                        // مؤشر الصور
+                        if (images.length > 1)
+                          Positioned(
+                            bottom: 20,
+                            left: 0,
+                            right: 0,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: images.asMap().entries.map((entry) {
+                                return Container(
+                                  width: 8,
+                                  height: 8,
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _currentImageIndex == entry.key
+                                        ? Colors.white
+                                        : Colors.white.withOpacity(0.5),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+
+                        // عدد الصور
+                        if (images.length > 1)
+                          Positioned(
+                            top: 40,
+                            right: 16,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.7),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '${_currentImageIndex + 1} / ${images.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    )
+                  : Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            const Color(0xFFB46A6A).withOpacity(0.3),
+                            const Color(0xFFB46A6A).withOpacity(0.7),
+                          ],
+                        ),
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.image, size: 80, color: Colors.white),
+                      ),
+                    ),
+            ),
+          ),
+
+          // المحتوى الرئيسي
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // اسم العنصر والسعر
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.item['name'] ?? 'عنصر بدون اسم',
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2D3748),
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFB46A6A).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: const Color(0xFFB46A6A),
+                            width: 2,
+                          ),
+                        ),
+                        child: Text(
+                          '$price د.ع',
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFB46A6A),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // ملاحظة: تم إزالة سطر "مقدم من:" من صفحة العميل حسب طلب العميل
+                  const SizedBox(height: 24),
+
+                  // التفاصيل
+                  if (widget.item['details'] != null &&
+                      widget.item['details'].toString().isNotEmpty) ...[
+                    const Text(
+                      'التفاصيل',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[200]!),
+                      ),
+                      child: Text(
+                        widget.item['details'],
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey[700],
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // موقع مزود الخدمة
+                  _buildProviderLocationSection(),
+
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+
+      // الأزرار السفلية
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // زر المشاركة
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue, width: 2),
+              ),
+              child: IconButton(
+                onPressed: () async {
+                  await ShareService().shareItem(
+                    itemId: widget.item['itemId'] ?? widget.item['id'] ?? '',
+                    itemName: widget.item['name'] ?? 'خدمة',
+                    providerName: widget.providerName,
+                    price: widget.item['price']?.toString(),
+                    description: widget.item['details'],
+                  );
+                },
+                icon: const Icon(Icons.share),
+                color: Colors.blue,
+                iconSize: 24,
+                tooltip: 'مشاركة الخدمة',
+              ),
+            ),
+            const SizedBox(width: 12),
+            // زر المفضلة
+            StreamBuilder<bool>(
+              stream: FavoriteService().isFavoriteStream(
+                customerId: _userId ?? '',
+                itemId: widget.item['itemId'] ?? widget.item['id'] ?? '',
+              ),
+              builder: (context, snapshot) {
+                final isFavorite = snapshot.data ?? false;
+
+                return Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isFavorite ? Colors.red : Colors.grey,
+                      width: 2,
+                    ),
+                  ),
+                  child: IconButton(
+                    onPressed: () async {
+                      if (_userId == null || _userId!.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('يرجى تسجيل الدخول أولاً'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        return;
+                      }
+
+                      try {
+                        final added = await FavoriteService().toggleFavorite(
+                          customerId: _userId!,
+                          itemId:
+                              widget.item['itemId'] ?? widget.item['id'] ?? '',
+                          itemName: widget.item['name'] ?? '',
+                          providerId: widget.item['providerId'] ?? '',
+                          providerName: widget.providerName,
+                          category: widget.item['category'] ?? '',
+                          price: _parsePrice(widget.item['price']),
+                          imageUrl:
+                              (widget.item['images'] as List<dynamic>?)
+                                      ?.isNotEmpty ==
+                                  true
+                              ? widget.item['images'][0]
+                              : null,
+                        );
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                added
+                                    ? '❤️ تمت الإضافة للمفضلات'
+                                    : '💔 تمت الإزالة من المفضلات',
+                              ),
+                              backgroundColor: added
+                                  ? Colors.green
+                                  : Colors.grey,
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('حدث خطأ: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    icon: Icon(
+                      isFavorite ? Icons.favorite : Icons.favorite_border,
+                    ),
+                    color: isFavorite ? Colors.red : Colors.grey,
+                    iconSize: 24,
+                    tooltip: isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة',
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: ElevatedButton.icon(
+                onPressed: () => _showBookingDialog(),
+                icon: const Icon(Icons.calendar_today, size: 20),
+                label: const Text(
+                  'تثبيت الحجز',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFB46A6A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // بناء قسم موقع مزود الخدمة
+  Widget _buildProviderLocationSection() {
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('providers')
+          .doc(widget.item['providerId'])
+          .get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return const SizedBox.shrink();
+        }
+
+        final providerData = snapshot.data!.data() as Map<String, dynamic>?;
+        final location = providerData?['location'] as GeoPoint?;
+        final address = providerData?['address'] as String?;
+
+        if (location == null) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'موقع مزود الخدمة',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2D3748),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey[200]!),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // معلومات الموقع
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.location_on,
+                          color: Colors.green,
+                          size: 28,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (address != null && address.isNotEmpty)
+                              Text(
+                                address,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF2D3748),
+                                ),
+                              )
+                            else
+                              const Text(
+                                'الموقع متاح على الخريطة',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF2D3748),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // زر عرض الموقع والمحادثة
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () =>
+                              _openLocationOnMap(location, address),
+                          icon: const Icon(Icons.map, size: 20),
+                          label: const Text(
+                            'عرض الموقع',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 2,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            ChatHelper.startChatWithUser(
+                              context: context,
+                              otherUserId: widget.item['providerId'] ?? '',
+                              otherUserName: widget.providerName,
+                              otherUserRole: 'provider',
+                              serviceName: widget.item['name'] ?? 'الخدمة',
+                            );
+                          },
+                          icon: const Icon(Icons.chat_rounded, size: 20),
+                          label: const Text(
+                            'المحادثة',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2B0606),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showBookingDialog() {
+    // التحقق من وجود معرف فريد للعنصر
+    final itemId = widget.item['itemId'] ?? widget.item['id'];
+    if (itemId == null || itemId.toString().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('خطأ: لا يمكن الحجز. هذا العنصر غير مسجل بشكل صحيح.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // تحضير البيانات للتمرير إلى BookingScreen
+    final rawServiceType =
+        widget.item['serviceType'] ?? widget.item['category'] ?? 'hall';
+    final normalizedServiceType = _normalizeServiceType(rawServiceType);
+
+    final serviceData = {
+      'id': itemId.toString(), // معرف فريد لكل عنصر
+      'name': widget.item['name'] ?? 'العنصر',
+      'price': widget.item['price'] ?? 0,
+      'providerId': widget.item['providerId'] ?? '',
+      'providerName': widget.providerName,
+      'serviceType': normalizedServiceType,
+      'description': widget.item['description'] ?? '',
+      'imageUrl': widget.item['imageUrl'] ?? widget.item['images']?[0] ?? '',
+    };
+
+    // التنقل إلى شاشة الحجز الاحترافية
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookingScreen(serviceData: serviceData),
+      ),
+    );
+  }
+
+  // تحويل أسماء الخدمات العربية إلى الأسماء الإنجليزية
+  String _normalizeServiceType(String serviceType) {
+    final normalized = serviceType.toLowerCase().trim();
+
+    if (normalized.contains('قاع') || normalized.contains('hall')) {
+      return 'hall';
+    }
+    if (normalized.contains('فند') ||
+        normalized.contains('فناد') ||
+        normalized.contains('hotel')) {
+      return 'hotel';
+    }
+    if (normalized.contains('صال') ||
+        normalized.contains('عناي') ||
+        normalized.contains('تجميل') ||
+        normalized.contains('مكياج') ||
+        normalized.contains('salon') ||
+        normalized.contains('care')) {
+      return 'salon_care';
+    }
+    if ((normalized.contains('سيار') ||
+            normalized.contains('تأجير') ||
+            normalized.contains('تاجير') ||
+            normalized.contains('car')) &&
+        !normalized.contains('تزيين') &&
+        !normalized.contains('decoration')) {
+      return 'car';
+    }
+    if (normalized.contains('تصوير') ||
+        normalized.contains('فيديو') ||
+        normalized.contains('photo')) {
+      return 'photography';
+    }
+    if (normalized.contains('مطع') || normalized.contains('restaurant')) {
+      return 'restaurant';
+    }
+    if (normalized.contains('فست') || normalized.contains('dress')) {
+      return 'bride_dress';
+    }
+    if (normalized.contains('بدل') || normalized.contains('suit')) {
+      return 'groom_suit';
+    }
+    if (normalized.contains('تزيين') || normalized.contains('decoration')) {
+      return 'car_decoration';
+    }
+    if (normalized.contains('كيك') || normalized.contains('cake')) {
+      return 'cake';
+    }
+    if (normalized.contains('ورد') || normalized.contains('flower')) {
+      return 'flowers';
+    }
+    if (normalized.contains('شهر') || normalized.contains('honey')) {
+      return 'honeymoon';
+    }
+
+    return serviceType; // إرجاع القيمة الأصلية إذا لم يتم التعرف عليها
+  }
+
+  // التحقق من أن الخدمة قابلة للحجز
+  bool _isBookableService() {
+    final raw = (widget.item['serviceType'] ?? widget.item['category'] ?? '')
+        .toString();
+    final normalized = _normalizeServiceType(raw);
+    return bookableCategories.contains(normalized);
+  }
+
+  // عرض تقويم الأوقات المحجوزة مع مؤشرات ملونة
+  void _showBookedDatesCalendar() async {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          constraints: const BoxConstraints(maxHeight: 600, maxWidth: 400),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // العنوان
+              Row(
+                children: [
+                  const Icon(
+                    Icons.event_available,
+                    color: Color(0xFFB46A6A),
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'الأوقات المحجوزة',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                    color: Colors.grey,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // شرح المؤشرات
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 16,
+                          height: 16,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'محجوز بالكامل',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                        const Spacer(),
+                        Container(
+                          width: 16,
+                          height: 16,
+                          decoration: BoxDecoration(
+                            color: Colors.orange[400],
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('حجز جزئي', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // التقويم
+              Expanded(
+                child: FutureBuilder<Map<String, dynamic>>(
+                  future: _loadBookingStatusForCalendar(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError) {
+                      return Center(child: Text('خطأ: ${snapshot.error}'));
+                    }
+
+                    final bookingData = snapshot.data ?? {};
+
+                    return _buildCalendarView(bookingData);
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // زر الإغلاق
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFB46A6A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('إغلاق', style: TextStyle(fontSize: 16)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // تحميل حالة الحجوزات لكل يوم
+  Future<Map<String, dynamic>> _loadBookingStatusForCalendar() async {
+    try {
+      final itemId = widget.item['itemId'] ?? widget.item['id'] ?? '';
+      final providerId = widget.item['providerId'] ?? '';
+      if (itemId.isEmpty) return {};
+
+      Map<String, dynamic> dateStatus = {};
+
+      // 1. تحميل التواريخ المحجوبة من بيانات المزود
+      if (providerId.isNotEmpty) {
+        try {
+          // البحث في published_providers أولاً
+          var providerDoc = await FirebaseFirestore.instance
+              .collection('published_providers')
+              .doc(providerId)
+              .get();
+
+          // إذا لم يكن موجوداً، ابحث في provider_requests
+          if (!providerDoc.exists) {
+            providerDoc = await FirebaseFirestore.instance
+                .collection('provider_requests')
+                .doc(providerId)
+                .get();
+          }
+
+          if (providerDoc.exists) {
+            final providerData = providerDoc.data();
+            final blockedDates = List<String>.from(
+              providerData?['blockedDates'] ?? [],
+            );
+            final blockedTimeSlots = List<String>.from(
+              providerData?['blockedTimeSlots'] ?? [],
+            );
+
+            // إضافة التواريخ المحجوبة بالكامل إلى dateStatus
+            for (var dateString in blockedDates) {
+              dateStatus[dateString] = {
+                'isFullDay': true,
+                'timeSlots': <String>[],
+                'isBlocked': true,
+              };
+            }
+
+            // إضافة الفترات الزمنية المحجوبة جزئياً
+            for (var slotKey in blockedTimeSlots) {
+              final parts = slotKey.split(':');
+              if (parts.length >= 2) {
+                final dateString = parts[0];
+                final timeSlot = parts.sublist(1).join(':');
+
+                if (!dateStatus.containsKey(dateString)) {
+                  dateStatus[dateString] = {
+                    'isFullDay': false,
+                    'timeSlots': <String>[],
+                  };
+                }
+
+                // إضافة الفترة المحجوبة إلى قائمة الفترات
+                (dateStatus[dateString]['timeSlots'] as List<String>).add(
+                  timeSlot,
+                );
+              }
+            }
+
+            print(
+              '📅 تم تحميل ${blockedDates.length} تاريخ محجوب و ${blockedTimeSlots.length} فترة محجوبة جزئياً',
+            );
+          }
+        } catch (e) {
+          print('⚠️ خطأ في تحميل التواريخ المحجوبة: $e');
+        }
+      }
+
+      // 2. جلب جميع الحجوزات للعنصر
+      final bookingsSnapshot = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('itemId', isEqualTo: itemId)
+          .where('status', whereIn: ['confirmed', 'pending'])
+          .get();
+
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final dateTimestamp = data['bookingDate'] as Timestamp?;
+        if (dateTimestamp == null) continue;
+
+        final date = dateTimestamp.toDate();
+        final dateKey =
+            '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+        // تحقق من نوع الحجز
+        final isFullDayBooking = data['isFullDayBooking'] == true;
+        final timeSlot = data['timeSlot'] as String?;
+
+        if (!dateStatus.containsKey(dateKey)) {
+          dateStatus[dateKey] = {'isFullDay': false, 'timeSlots': <String>[]};
+        }
+
+        // لا تستبدل التواريخ المحجوبة
+        if (dateStatus[dateKey]['isBlocked'] != true) {
+          if (isFullDayBooking) {
+            dateStatus[dateKey]['isFullDay'] = true;
+          } else if (timeSlot != null && timeSlot.isNotEmpty) {
+            (dateStatus[dateKey]['timeSlots'] as List<String>).add(timeSlot);
+          }
+        }
+      }
+
+      return dateStatus;
+    } catch (e) {
+      print('خطأ في تحميل حالة الحجوزات: $e');
+      return {};
+    }
+  }
+
+  // بناء عرض التقويم
+  Widget _buildCalendarView(Map<String, dynamic> bookingData) {
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month, 1);
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // شهر واحد فقط للعرض (يمكن توسيعه لاحقاً)
+          _buildMonthCalendar(currentMonth, bookingData),
+          const SizedBox(height: 16),
+          _buildMonthCalendar(
+            DateTime(currentMonth.year, currentMonth.month + 1, 1),
+            bookingData,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // بناء تقويم شهر واحد
+  Widget _buildMonthCalendar(DateTime month, Map<String, dynamic> bookingData) {
+    final monthName = _getArabicMonthName(month.month);
+    final firstDayOfMonth = DateTime(month.year, month.month, 1);
+    final lastDayOfMonth = DateTime(month.year, month.month + 1, 0);
+    final daysInMonth = lastDayOfMonth.day;
+    final firstWeekday = firstDayOfMonth.weekday % 7; // 0 = Sunday
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[300]!),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          // عنوان الشهر
+          Text(
+            '$monthName ${month.year}',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2D3748),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // أسماء الأيام
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children:
+                ['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت']
+                    .map(
+                      (day) => Expanded(
+                        child: Center(
+                          child: Text(
+                            day,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+          ),
+          const SizedBox(height: 8),
+
+          // الأيام
+          ...List.generate(((daysInMonth + firstWeekday) / 7).ceil(), (
+            weekIndex,
+          ) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: List.generate(7, (dayIndex) {
+                  final dayNumber = weekIndex * 7 + dayIndex - firstWeekday + 1;
+
+                  if (dayNumber < 1 || dayNumber > daysInMonth) {
+                    return const Expanded(child: SizedBox(height: 36));
+                  }
+
+                  final date = DateTime(month.year, month.month, dayNumber);
+                  final dateKey =
+                      '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+                  final bookingInfo = bookingData[dateKey];
+
+                  Color? indicatorColor;
+                  if (bookingInfo != null) {
+                    if (bookingInfo['isFullDay'] == true) {
+                      indicatorColor = Colors.red; // محجوز بالكامل
+                    } else if ((bookingInfo['timeSlots'] as List).isNotEmpty) {
+                      indicatorColor = Colors.orange[400]; // حجز جزئي
+                    }
+                  }
+
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: bookingInfo != null
+                          ? () =>
+                                _showBookingDetailsDialog(dateKey, bookingInfo)
+                          : null,
+                      child: Container(
+                        height: 36,
+                        margin: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color:
+                              date.day == DateTime.now().day &&
+                                  date.month == DateTime.now().month &&
+                                  date.year == DateTime.now().year
+                              ? Colors.blue[50]
+                              : null,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Text(
+                              dayNumber.toString(),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color:
+                                    date.isBefore(
+                                      DateTime.now().subtract(
+                                        const Duration(days: 1),
+                                      ),
+                                    )
+                                    ? Colors.grey[400]
+                                    : Colors.black87,
+                              ),
+                            ),
+                            if (indicatorColor != null)
+                              Positioned(
+                                bottom: 2,
+                                child: Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: BoxDecoration(
+                                    color: indicatorColor,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  // عرض تفاصيل الحجوزات عند النقر على يوم معين
+  void _showBookingDetailsDialog(
+    String dateKey,
+    Map<String, dynamic> bookingInfo,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.calendar_today, color: Color(0xFF6B73FF), size: 24),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'تفاصيل الحجوزات',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // عرض التاريخ
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.date_range, size: 20, color: Colors.grey[700]),
+                  SizedBox(width: 8),
+                  Text(
+                    dateKey,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+
+            // حالة الحجز
+            if (bookingInfo['isBlocked'] == true) ...[
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[300]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.block, color: Colors.red[700], size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'هذا التاريخ محجوب من قبل المزود',
+                        style: TextStyle(
+                          color: Colors.red[900],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (bookingInfo['isFullDay'] == true) ...[
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red[300]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.event_busy, color: Colors.red[700], size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'محجوز بالكامل - اليوم كامل',
+                        style: TextStyle(
+                          color: Colors.red[900],
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if ((bookingInfo['timeSlots'] as List).isNotEmpty) ...[
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange[300]!),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          color: Colors.orange[700],
+                          size: 20,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'حجز جزئي - فترات محجوزة:',
+                          style: TextStyle(
+                            color: Colors.orange[900],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    ...((bookingInfo['timeSlots'] as List).map(
+                      (slot) => Padding(
+                        padding: EdgeInsets.only(left: 28, bottom: 4),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.circle,
+                              size: 6,
+                              color: Colors.orange[700],
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              slot.toString(),
+                              style: TextStyle(
+                                color: Colors.grey[800],
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('إغلاق', style: TextStyle(fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // الحصول على اسم الشهر بالعربي
+  String _getArabicMonthName(int month) {
+    const months = [
+      'يناير',
+      'فبراير',
+      'مارس',
+      'أبريل',
+      'مايو',
+      'يونيو',
+      'يوليو',
+      'أغسطس',
+      'سبتمبر',
+      'أكتوبر',
+      'نوفمبر',
+      'ديسمبر',
+    ];
+    return months[month - 1];
+  }
+
+  Future<void> _openLocationOnMap(GeoPoint location, String? address) async {
+    try {
+      final latitude = location.latitude;
+      final longitude = location.longitude;
+
+      // فتح الموقع في Google Maps مع إحداثيات دقيقة
+      final Uri googleMapsUrl = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude',
+      );
+
+      if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('لا يمكن فتح الخريطة'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}

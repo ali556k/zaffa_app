@@ -1,0 +1,4541 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../utils/chat_helper.dart';
+import '../utils/price_formatter.dart';
+
+class AdminProviderRequestsScreen extends StatefulWidget {
+  const AdminProviderRequestsScreen({Key? key}) : super(key: key);
+
+  @override
+  State<AdminProviderRequestsScreen> createState() =>
+      _AdminProviderRequestsScreenState();
+}
+
+class _AdminProviderRequestsScreenState
+    extends State<AdminProviderRequestsScreen> {
+  List<Map<String, dynamic>> _providerRequests = [];
+  bool _isLoading = true;
+
+  // تطبيع رقم الهاتف لإزالة المسافات والبادئات الشائعة
+  String _normalizePhone(dynamic phone) {
+    if (phone == null) return '';
+    String p = phone.toString().trim();
+    p = p
+        .replaceAll(' ', '')
+        .replaceAll('-', '')
+        .replaceAll('(', '')
+        .replaceAll(')', '');
+    // إزالة بادئة +964 وتحويلها إلى 0
+    if (p.startsWith('+964')) {
+      p = '0' + p.substring(4);
+    }
+    // إزالة 00964 أيضاً
+    if (p.startsWith('00964')) {
+      p = '0' + p.substring(5);
+    }
+    return p;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProviderRequests();
+  }
+
+  // يبني مفتاح فريد لعنصر بالاعتماد على الاسم والسعر والتفاصيل (بعد تنظيفها)
+  String _buildItemKey(Map<String, dynamic> item) {
+    final name = (item['name'] ?? '').toString().trim();
+    final details = (item['details'] ?? '').toString().trim();
+    final price = (item['price'] ?? '').toString().replaceAll(',', '').trim();
+    return '${name.toLowerCase()}|${price}|${details.toLowerCase()}';
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  Future<void> _loadProviderRequests() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      print('🔍 بدء تحميل طلبات مزودي الخدمة...');
+
+      // البحث في مجموعة provider_requests (الطلبات الجديدة)
+      final requestsSnapshot = await FirebaseFirestore.instance
+          .collection('provider_requests')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      print(
+        '📊 عدد الطلبات في provider_requests: ${requestsSnapshot.docs.length}',
+      );
+
+      List<Map<String, dynamic>> requests = [];
+
+      for (var requestDoc in requestsSnapshot.docs) {
+        final requestData = requestDoc.data();
+        final requestId = requestDoc.id;
+
+        print('📋 طلب جديد: $requestId');
+        print('📄 بيانات الطلب: $requestData');
+
+        // إضافة معرف الطلب للبيانات
+        requestData['requestId'] = requestId;
+
+        // محاولة تحديد إن كان المزود مسجلاً مسبقاً عبر published_providers
+        try {
+          final rawPhone =
+              requestData['userPhone'] ??
+              requestData['providerPhone'] ??
+              requestData['phone'];
+          final normPhone = _normalizePhone(rawPhone);
+          bool found = false;
+
+          // 1) محاولة مباشرة عبر الهاتف المطبع
+          if (normPhone.isNotEmpty) {
+            final publishedSnap = await FirebaseFirestore.instance
+                .collection('published_providers')
+                .where('providerPhone', isEqualTo: normPhone)
+                .limit(1)
+                .get();
+            if (publishedSnap.docs.isNotEmpty) {
+              final publishedData = publishedSnap.docs.first.data();
+              requestData['isRegisteredProvider'] = true;
+              requestData['providerId'] =
+                  publishedData['providerId'] ?? publishedSnap.docs.first.id;
+              requestData['published'] = publishedData['published'] ?? true;
+              requestData['isPublished'] =
+                  publishedData['isPublished'] ??
+                  publishedData['published'] ??
+                  true;
+              requestData['status'] =
+                  publishedData['status'] ?? requestData['status'];
+              found = true;
+            }
+          }
+
+          // 2) إن لم يُعثر، جرّب مطابقة عبر provider_services ثم published_providers عبر providerId
+          if (!found && normPhone.isNotEmpty) {
+            final providerServicesSnap = await FirebaseFirestore.instance
+                .collection('provider_services')
+                .where('providerPhone', isEqualTo: normPhone)
+                .limit(1)
+                .get();
+            if (providerServicesSnap.docs.isNotEmpty) {
+              final psData = providerServicesSnap.docs.first.data();
+              final psProviderId =
+                  (psData['providerId'] ?? providerServicesSnap.docs.first.id)
+                      .toString();
+              final pubByIdSnap = await FirebaseFirestore.instance
+                  .collection('published_providers')
+                  .where('providerId', isEqualTo: psProviderId)
+                  .limit(1)
+                  .get();
+              if (pubByIdSnap.docs.isNotEmpty) {
+                final publishedData = pubByIdSnap.docs.first.data();
+                requestData['isRegisteredProvider'] = true;
+                requestData['providerId'] =
+                    publishedData['providerId'] ?? pubByIdSnap.docs.first.id;
+                requestData['published'] = publishedData['published'] ?? true;
+                requestData['isPublished'] =
+                    publishedData['isPublished'] ??
+                    publishedData['published'] ??
+                    true;
+                requestData['status'] =
+                    publishedData['status'] ?? requestData['status'];
+                found = true;
+              }
+            }
+          }
+
+          // 3) لو لم يُعثر، اتركها False مع طباعة لمساعدتنا بالتشخيص
+          requestData['isRegisteredProvider'] =
+              requestData['isRegisteredProvider'] == true || found;
+          print(
+            '🔎 NEW REQUEST $requestId | phoneRaw=$rawPhone norm=$normPhone | isRegistered=${requestData['isRegisteredProvider']}',
+          );
+        } catch (e) {
+          print(
+            '⚠️ فشل التحقق من حالة المزود في published_providers للطلب $requestId: $e',
+          );
+        }
+
+        requests.add({'type': 'new_request', 'requestData': requestData});
+      }
+
+      // البحث في مجموعة provider_services (المزودين المسجلين)
+      final providersSnapshot = await FirebaseFirestore.instance
+          .collection('provider_services')
+          .get();
+
+      print('📊 عدد مزودي الخدمة المسجلين: ${providersSnapshot.docs.length}');
+
+      // قائمة لتتبع المزودين المُضافين لتجنب التكرار
+      Set<String> addedProviders = <String>{};
+
+      for (var providerDoc in providersSnapshot.docs) {
+        final providerData = providerDoc.data();
+        // تطبيع معرف المزود لضمان التوافق مع حقول مختلفة
+        final providerId =
+            (providerData['providerId'] ??
+                    providerData['id'] ??
+                    providerData['providerID'] ??
+                    providerDoc.id)
+                .toString();
+
+        // تجنب إضافة نفس المزود مرتين
+        if (addedProviders.contains(providerId)) {
+          print('⚠️ تم تجاهل المزود المكرر: $providerId');
+          continue;
+        }
+
+        print('👤 معالجة مزود الخدمة المسجل: $providerId');
+        print('📋 بيانات المزود: $providerData');
+
+        // محاولة إثراء بيانات المزود بحالة النشر/الموافقة من published_providers
+        try {
+          final publishedSnap = await FirebaseFirestore.instance
+              .collection('published_providers')
+              .where('providerId', isEqualTo: providerId)
+              .limit(1)
+              .get();
+          if (publishedSnap.docs.isNotEmpty) {
+            final publishedData = publishedSnap.docs.first.data();
+            providerData['published'] = publishedData['published'] ?? true;
+            providerData['isPublished'] =
+                publishedData['isPublished'] ??
+                publishedData['published'] ??
+                true;
+            providerData['status'] =
+                publishedData['status'] ?? providerData['status'];
+            providerData['approved'] =
+                publishedData['approved'] ?? providerData['approved'];
+            providerData['approvedByOwner'] =
+                publishedData['approvedByOwner'] ??
+                providerData['approvedByOwner'];
+            providerData['ownerApproved'] =
+                publishedData['ownerApproved'] ?? providerData['ownerApproved'];
+            print(
+              '✅ تم العثور على المزود منشور في published_providers: $providerId',
+            );
+          } else {
+            print(
+              'ℹ️ لم يتم العثور على سجل في published_providers لـ: $providerId',
+            );
+          }
+        } catch (e) {
+          print('⚠️ فشل إثراء بيانات المزود من published_providers: $e');
+        }
+
+        // تحميل العناصر لكل مزود خدمة
+        final itemsSnapshot = await FirebaseFirestore.instance
+            .collection('provider_items')
+            .where('providerId', isEqualTo: providerId)
+            .get();
+
+        print(
+          '📦 عدد العناصر للمزود $providerId: ${itemsSnapshot.docs.length}',
+        );
+
+        List<Map<String, dynamic>> providerItems = [];
+        List<Map<String, dynamic>> pendingItems = [];
+        Set<String> addedItems = <String>{}; // لتجنب تكرار العناصر
+
+        for (var itemDoc in itemsSnapshot.docs) {
+          final itemData = itemDoc.data();
+          final itemId = itemDoc.id;
+
+          // تجنب إضافة نفس العنصر مرتين
+          if (addedItems.contains(itemId)) {
+            print('  ⚠️ تم تجاهل العنصر المكرر: $itemId');
+            continue;
+          }
+
+          itemData['id'] = itemId;
+          providerItems.add(itemData);
+          // مفتاح فريد يعتمد على البيانات الأساسية لضمان عدم التكرار عبر المصادر المختلفة
+          final key = _buildItemKey(itemData);
+          addedItems.add(key);
+
+          // فصل العناصر المعلقة
+          if (itemData['status'] == 'pending') {
+            pendingItems.add(itemData);
+            print('  📄 عنصر معلق: ${itemData['name']}');
+          } else {
+            print(
+              '  📄 عنصر: ${itemData['name']} - حالة: ${itemData['status']}',
+            );
+          }
+        }
+
+        // تعويض العناصر المعلقة من provider_requests في حال لم تظهر بعد في provider_items
+        try {
+          final pendingRequestsSnapshot = await FirebaseFirestore.instance
+              .collection('provider_requests')
+              .where('providerId', isEqualTo: providerId)
+              .where('status', isEqualTo: 'pending')
+              .where('type', isEqualTo: 'provider_service_items')
+              .get();
+
+          for (var reqDoc in pendingRequestsSnapshot.docs) {
+            final reqData = reqDoc.data();
+            final reqItems = (reqData['items'] as List?) ?? const [];
+            for (var rawItem in reqItems) {
+              // تأكد من شكل الخريطة
+              final itemData = Map<String, dynamic>.from(rawItem as Map);
+              final uniqueKey = _buildItemKey(itemData);
+              if (!addedItems.contains(uniqueKey)) {
+                // أضف كعنصر معلق لإظهاره في واجهة المسؤول
+                pendingItems.add({
+                  ...itemData,
+                  'status': itemData['status'] ?? 'pending',
+                });
+                addedItems.add(uniqueKey);
+              }
+            }
+          }
+        } catch (e) {
+          print(
+            '⚠️ فشل جلب عناصر الطلبات المعلقة من provider_requests للمزود $providerId: $e',
+          );
+        }
+
+        // إضافة المزود إذا كان لديه عناصر
+        if (providerItems.isNotEmpty || providerData.isNotEmpty) {
+          // إذا كان لديه عناصر معلقة، أضفه كطلب عنصر جديد
+          if (pendingItems.isNotEmpty) {
+            requests.add({
+              'type': 'new_item_request',
+              'providerId': providerId,
+              'providerData': providerData,
+              'items': providerItems,
+              'pendingItems': pendingItems,
+            });
+            print(
+              '✅ تم إضافة طلب عنصر جديد للمزود: $providerId مع ${pendingItems.length} عنصر معلق',
+            );
+          } else {
+            // إذا لم يكن لديه عناصر معلقة، أضفه كمزود عادي
+            requests.add({
+              'type': 'registered_provider',
+              'providerId': providerId,
+              'providerData': providerData,
+              'items': providerItems,
+            });
+            print(
+              '✅ تم إضافة المزود: $providerId مع ${providerItems.length} عنصر',
+            );
+          }
+          addedProviders.add(providerId);
+        }
+      }
+
+      print('✅ إجمالي الطلبات المُحمّلة: ${requests.length}');
+
+      // ترتيب الطلبات حسب التاريخ (الأحدث أولاً)
+      requests.sort((a, b) {
+        DateTime? dateA;
+        DateTime? dateB;
+
+        if (a['type'] == 'new_request') {
+          final requestData = a['requestData'];
+          if (requestData['submittedAt'] != null) {
+            dateA = (requestData['submittedAt'] as Timestamp).toDate();
+          } else if (requestData['createdAt'] != null) {
+            dateA = (requestData['createdAt'] as Timestamp).toDate();
+          }
+        }
+
+        if (b['type'] == 'new_request') {
+          final requestData = b['requestData'];
+          if (requestData['submittedAt'] != null) {
+            dateB = (requestData['submittedAt'] as Timestamp).toDate();
+          } else if (requestData['createdAt'] != null) {
+            dateB = (requestData['createdAt'] as Timestamp).toDate();
+          }
+        }
+
+        // إذا لم نجد تاريخ، نضع العنصر في النهاية
+        if (dateA == null && dateB == null) return 0;
+        if (dateA == null) return 1;
+        if (dateB == null) return -1;
+
+        return dateB.compareTo(dateA); // الأحدث أولاً
+      });
+
+      print('🗂️ تم ترتيب ${requests.length} طلب حسب التاريخ');
+
+      if (!mounted) return;
+      setState(() {
+        _providerRequests = requests;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('❌ خطأ في تحميل طلبات مزودي الخدمة: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('خطأ في تحميل البيانات: $e')));
+      }
+    }
+  }
+
+  // دالة إرسال طلب تجريبي
+  Future<void> _sendTestRequest() async {
+    try {
+      await FirebaseFirestore.instance.collection('provider_requests').add({
+        'serviceName': 'خدمة تجريبية',
+        'userPhone': '07700000000',
+        'userName': 'مزود تجريبي',
+        'governorate': 'بغداد',
+        'description': 'هذا طلب اختبار للتأكد من وصول الطلبات',
+        'submittedAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'pending',
+        'type': 'test_request',
+        'items': [
+          {
+            'name': 'عنصر تجريبي',
+            'details': 'وصف العنصر التجريبي',
+            'price': '100000',
+            'imageUrls': ['https://via.placeholder.com/300'],
+            'capacity': '100 شخص',
+          },
+        ],
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال الطلب التجريبي بنجاح! اضغط تحديث لرؤيته'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // تحديث القائمة
+      _loadProviderRequests();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في الإرسال: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('طلبات مزودي الخدمة المرسلة'),
+        backgroundColor: const Color(0xFF530405),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadProviderRequests,
+            tooltip: 'تحديث القائمة',
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'update_approved') {
+                _updateAllApprovedItemsStatus();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'update_approved',
+                child: Row(
+                  children: [
+                    Icon(Icons.update, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Text('تحديث العناصر المعتمدة'),
+                  ],
+                ),
+              ),
+            ],
+            tooltip: 'خيارات إضافية',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF1E88E5)),
+                  SizedBox(height: 16),
+                  Text('جاري تحميل طلبات مزودي الخدمة...'),
+                ],
+              ),
+            )
+          : _providerRequests.isEmpty
+          ? RefreshIndicator(
+              onRefresh: _loadProviderRequests,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Container(
+                  height: MediaQuery.of(context).size.height - 200,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.assignment_outlined,
+                        size: 64,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'لا توجد طلبات حالياً',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _sendTestRequest,
+                        icon: const Icon(Icons.send),
+                        label: const Text('إرسال طلب تجريبي'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadProviderRequests,
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: _providerRequests.length,
+                itemBuilder: (context, index) {
+                  final request = _providerRequests[index];
+                  if (request['type'] == 'new_request') {
+                    return _buildNewRequestCard(request['requestData']);
+                  } else if (request['type'] == 'registered_provider') {
+                    return _buildProviderRequestCard(request);
+                  } else if (request['type'] == 'new_item_request') {
+                    return _buildNewItemRequestCard(request);
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+    );
+  }
+
+  Widget _buildNewRequestCard(Map<String, dynamic> requestData) {
+    // التحقق من نوع الطلب (قاعة أعراس أم عادي)
+    final isHallProvider =
+        requestData['isHallProvider'] == true ||
+        requestData['serviceType'] == 'قاعات اعراس' ||
+        requestData['serviceName'] == 'قاعات اعراس';
+
+    // استخراج العناصر من بيانات الطلب
+    final items = requestData['items'] as List<dynamic>? ?? [];
+
+    // اسم الخدمة هو الاسم التجاري المعروض
+    final businessName = isHallProvider
+        ? (requestData['hallName'] ??
+              requestData['serviceName'] ??
+              'قاعة أعراس')
+        : (requestData['serviceName'] ??
+              requestData['serviceType'] ??
+              requestData['providerName'] ??
+              requestData['userName'] ??
+              'مزود خدمة');
+    final providerPhone =
+        requestData['userPhone'] ??
+        requestData['phone'] ??
+        requestData['providerPhone'] ??
+        requestData['providerPhone'] ??
+        'غير محدد';
+    // اسم المستخدم الحقيقي (ليس الاسم التجاري)
+    final actualUserName =
+        requestData['userName'] ?? requestData['name'] ?? providerPhone;
+    // المحافظة
+    final userGovernorate =
+        requestData['userGovernorate'] ??
+        requestData['governorate'] ??
+        requestData['city'] ??
+        'غير محدد';
+    // المنطقة
+    final userArea =
+        requestData['userArea'] ??
+        requestData['area'] ??
+        requestData['serviceArea'] ??
+        'غير محدد';
+    final serviceName =
+        requestData['serviceType'] ?? requestData['serviceName'] ?? 'غير محدد';
+
+    // إحصائيات العناصر (للقاعات، العناصر هي الخدمات الضمنية)
+    final totalItems = isHallProvider
+        ? (requestData['includedServices'] as List<dynamic>?)?.length ?? 0
+        : items.length;
+
+    // تحديد ما إذا كان الطلب جديداً (خلال آخر 24 ساعة)
+    bool isNew = false;
+    DateTime? requestDate;
+    if (requestData['submittedAt'] != null) {
+      requestDate = (requestData['submittedAt'] as Timestamp).toDate();
+    } else if (requestData['createdAt'] != null) {
+      requestDate = (requestData['createdAt'] as Timestamp).toDate();
+    }
+
+    if (requestDate != null) {
+      final now = DateTime.now();
+      final difference = now.difference(requestDate);
+      isNew = difference.inHours < 24;
+    }
+
+    final isRegisteredProvider =
+        requestData['isRegisteredProvider'] == true ||
+        requestData['published'] == true ||
+        requestData['isPublished'] == true ||
+        requestData['status'] == 'approved';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.all(16),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        leading: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              const Icon(
+                Icons.assignment_outlined,
+                color: Colors.orange,
+                size: 24,
+              ),
+              if (isNew)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Container(
+                    width: 12,
+                    height: 12,
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$businessName (طلب جديد)',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2D3748),
+                    ),
+                  ),
+                ),
+                if (isNew)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'جديد',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                if (isRegisteredProvider)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified, size: 14, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'مزود مسجل',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+            Text(
+              'خدمة: $serviceName',
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'الهاتف: $providerPhone',
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                'طلب جديد - عدد العناصر: $totalItems',
+                style: const TextStyle(
+                  color: Colors.orange,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        children: [
+          const SizedBox(height: 12),
+          // معلومات أساسية عن الطلب
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'معلومات الطلب',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // صورة الخدمة
+                if (requestData['serviceImage'] != null ||
+                    requestData['serviceImageUrl'] != null ||
+                    requestData['imageUrl'] != null)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'صورة الخدمة:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2D3748),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          requestData['serviceImage'] ??
+                              requestData['serviceImageUrl'] ??
+                              requestData['imageUrl'] ??
+                              '',
+                          height: 200,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 200,
+                              width: double.infinity,
+                              color: Colors.grey[200],
+                              child: const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.broken_image,
+                                    size: 50,
+                                    color: Colors.grey,
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    'لا توجد صورة',
+                                    style: TextStyle(color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
+                _buildInfoRow('الاسم التجاري', businessName),
+                _buildInfoRow('اسم المستخدم', actualUserName),
+                _buildInfoRow('نوع الخدمة', serviceName),
+                _buildInfoRow('رقم الهاتف', providerPhone),
+                _buildInfoRow('المحافظة', userGovernorate),
+                _buildInfoRow('المنطقة', userArea),
+                if (requestData['creditCard'] != null &&
+                    requestData['creditCard'].toString().isNotEmpty)
+                  _buildInfoRow(
+                    'رقم بطاقة الائتمان',
+                    requestData['creditCard'],
+                  ),
+                const SizedBox(height: 12),
+                // زر عرض الموقع على الخريطة
+                ElevatedButton.icon(
+                  onPressed: () {
+                    double? lat;
+                    double? lng;
+
+                    // محاولة الحصول على الموقع من عدة حقول محتملة
+                    if (requestData['location'] != null) {
+                      final location = requestData['location'];
+                      if (location is GeoPoint) {
+                        lat = location.latitude;
+                        lng = location.longitude;
+                      } else if (location is Map) {
+                        lat = location['latitude'];
+                        lng = location['longitude'];
+                      }
+                    }
+
+                    if (lat == null || lng == null) {
+                      lat = requestData['latitude'];
+                      lng = requestData['longitude'];
+                    }
+
+                    if (lat != null && lng != null) {
+                      _showLocationOnMap(context, lat, lng, businessName);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('الموقع غير متوفر في هذا الطلب'),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.map),
+                  label: const Text('عرض الموقع على الخريطة'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 45),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          if (isHallProvider)
+            // عرض بيانات قاعة الأعراس
+            _buildHallProviderDetails(requestData)
+          else if (items.isEmpty &&
+              (requestData['existingItems'] == null ||
+                  (requestData['existingItems'] as List).isEmpty))
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: const Text(
+                'لا توجد عناصر في هذا الطلب',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // عرض العناصر القديمة إذا كان المزود مسجلاً
+                if (requestData['existingItems'] != null &&
+                    (requestData['existingItems'] as List).isNotEmpty) ...[
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.inventory_2_outlined,
+                        color: Color(0xFF10B981),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'العناصر الموجودة (قديمة)',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${(requestData['existingItems'] as List).length} عنصر قديم',
+                          style: const TextStyle(
+                            color: Color(0xFF10B981),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...(requestData['existingItems'] as List).asMap().entries.map(
+                    (entry) {
+                      final index = entry.key;
+                      final item = entry.value as Map<String, dynamic>;
+                      return _buildExistingItemCard(item, index);
+                    },
+                  ).toList(),
+                  const SizedBox(height: 24),
+                ],
+                // عرض العناصر الجديدة
+                if (items.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.inventory,
+                        color: Color(0xFF1E88E5),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        requestData['existingItems'] != null &&
+                                (requestData['existingItems'] as List)
+                                    .isNotEmpty
+                            ? 'العناصر الجديدة المطلوب إضافتها'
+                            : 'عناصر الطلب',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E88E5),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E88E5).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$totalItems عنصر جديد',
+                          style: const TextStyle(
+                            color: Color(0xFF1E88E5),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...items.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final item = entry.value as Map<String, dynamic>;
+                    return _buildNewRequestItemCard(item, index, requestData);
+                  }).toList(),
+                ],
+              ],
+            ),
+
+          const SizedBox(height: 16),
+
+          // أزرار الإجراءات الرئيسية
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.admin_panel_settings,
+                      color: Color(0xFF1E88E5),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'إجراءات الإدارة',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _approveNewRequest(requestData),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10B981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.check_circle, size: 20),
+                        label: const Text('موافقة على الطلب'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _rejectNewRequest(requestData),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.cancel, size: 20),
+                        label: const Text('رفض الطلب'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _contactProvider(requestData),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E88E5),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.chat, size: 20),
+                    label: const Text('محادثة مزود الخدمة'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewRequestItemCard(
+    Map<String, dynamic> item,
+    int index,
+    Map<String, dynamic> requestData,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E88E5).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: Color(0xFF1E88E5),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  item['name'] ?? 'عنصر غير محدد',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D3748),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.schedule, size: 14, color: Colors.orange),
+                    SizedBox(width: 4),
+                    Text(
+                      'في انتظار المراجعة',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // تفاصيل العنصر
+          if (item['details'] != null && item['details'].toString().isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.description, size: 16, color: Colors.grey),
+                      SizedBox(width: 8),
+                      Text(
+                        'التفاصيل:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    item['details'].toString(),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF2D3748),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          const SizedBox(height: 12),
+
+          // معلومات السعر والسعة
+          Row(
+            children: [
+              if (item['price'] != null)
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.attach_money,
+                              size: 16,
+                              color: Color(0xFF10B981),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'السعر:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item['price']} دينار عراقي',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (item['price'] != null && item['capacity'] != null)
+                const SizedBox(width: 8),
+              if (item['capacity'] != null)
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E88E5).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(
+                              Icons.people,
+                              size: 16,
+                              color: Color(0xFF1E88E5),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'السعة:',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          item['capacity'].toString(),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E88E5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          // عرض الصور إن وجدت
+          if (item['imageUrls'] != null &&
+              (item['imageUrls'] as List).isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Row(
+              children: [
+                Icon(Icons.image, size: 16, color: Colors.grey),
+                SizedBox(width: 8),
+                Text(
+                  'الصور المرفقة:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 80,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: (item['imageUrls'] as List).length,
+                itemBuilder: (context, imgIndex) {
+                  return Container(
+                    width: 80,
+                    height: 80,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        (item['imageUrls'] as List)[imgIndex],
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.grey[200],
+                            child: const Icon(
+                              Icons.broken_image,
+                              color: Colors.grey,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProviderRequestCard(Map<String, dynamic> request) {
+    final providerData = request['providerData'] as Map<String, dynamic>;
+    final items = request['items'] as List<Map<String, dynamic>>;
+
+    // إحصائيات العناصر
+    final pendingItems = items
+        .where((item) => item['status'] == 'pending')
+        .length;
+    final approvedItems = items
+        .where((item) => item['status'] == 'approved')
+        .length;
+    final rejectedItems = items
+        .where((item) => item['status'] == 'rejected')
+        .length;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.all(16),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        leading: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E88E5).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(Icons.business, color: Color(0xFF1E88E5), size: 24),
+        ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              providerData['serviceName'] ??
+                  providerData['providerName'] ??
+                  'مزود خدمة',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2D3748),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // عرض اسم الخدمة بشكل واضح
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: const Color(0xFF10B981).withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.business,
+                    size: 16,
+                    color: Color(0xFF10B981),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'خدمة: ${providerData['serviceName'] ?? 'غير محدد'}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF10B981),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                if (providerData['governorate'] != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.location_on,
+                          size: 12,
+                          color: Colors.orange,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          providerData['governorate'],
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                if (providerData['area'] != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      providerData['area'],
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+            // معلومات الخدمة والتواصل والموقع
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // عرض اسم الخدمة مرة أخرى في التفاصيل
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.work,
+                        size: 16,
+                        color: Color(0xFF10B981),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'نوع الخدمة: ${providerData['serviceName'] ?? 'غير محدد'}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.phone, size: 16, color: Colors.grey),
+                      const SizedBox(width: 8),
+                      Text(
+                        providerData['providerPhone'] ?? 'غير محدد',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (providerData['area'] != null) ...[
+                        const Icon(
+                          Icons.location_on,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          providerData['area'],
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if (providerData['createdAt'] != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'تاريخ التسجيل: ${_formatDate(providerData['createdAt'])}',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildStatusChip('قيد المراجعة', pendingItems, Colors.orange),
+                _buildStatusChip(
+                  'معتمد',
+                  approvedItems,
+                  const Color(0xFF10B981),
+                ),
+                _buildStatusChip('مرفوض', rejectedItems, Colors.red),
+              ],
+            ),
+          ],
+        ),
+        children: [
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'لا توجد عناصر لهذا المزود',
+                style: TextStyle(color: Colors.grey),
+              ),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'عناصر الخدمة:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D3748),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...items.map((item) => _buildItemCard(item)).toList(),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return 'غير محدد';
+
+    try {
+      DateTime date;
+      if (timestamp is Timestamp) {
+        date = timestamp.toDate();
+      } else if (timestamp is String) {
+        date = DateTime.parse(timestamp);
+      } else {
+        return 'تاريخ غير صالح';
+      }
+
+      return '${date.day}/${date.month}/${date.year}';
+    } catch (e) {
+      print('Error formatting date: $e');
+      return 'تاريخ غير صالح';
+    }
+  }
+
+  Widget _buildStatusChip(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        '$label ($count)',
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemCard(Map<String, dynamic> item) {
+    final String status = item['status'] ?? 'pending';
+    Color statusColor;
+    String statusText;
+    IconData statusIcon;
+
+    switch (status) {
+      case 'approved':
+        statusColor = const Color(0xFF10B981);
+        statusText = 'معتمد';
+        statusIcon = Icons.check_circle;
+        break;
+      case 'rejected':
+        statusColor = Colors.red;
+        statusText = 'مرفوض';
+        statusIcon = Icons.cancel;
+        break;
+      default:
+        statusColor = Colors.orange;
+        statusText = 'قيد المراجعة';
+        statusIcon = Icons.hourglass_empty;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
+      ),
+      child: InkWell(
+        onTap: () => _showItemDetailsDialog(item),
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    item['name'] ?? 'عنصر غير محدد',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2D3748),
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(statusIcon, size: 14, color: statusColor),
+                      const SizedBox(width: 4),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'السعر: ${item['price'] ?? 'غير محدد'} دينار عراقي',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF10B981),
+              ),
+            ),
+            if (item['details'] != null && item['details'].isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                item['details'],
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const Icon(Icons.touch_app, size: 16, color: Colors.grey),
+                const SizedBox(width: 4),
+                const Text(
+                  'اضغط للمراجعة',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showItemDetailsDialog(Map<String, dynamic> item) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: MediaQuery.of(context).size.width,
+          height: MediaQuery.of(context).size.height * 0.9,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // شريط علوي مع أزرار التحكم
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E88E5).withOpacity(0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item['name'] ?? 'عنصر غير محدد',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2D3748),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close, color: Colors.grey),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // محتوى قابل للتمرير
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // معرض الصور الاحترافي
+                      _buildImageGallery(item),
+
+                      const SizedBox(height: 24),
+
+                      // معلومات السعر
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF10B981).withOpacity(0.1),
+                              const Color(0xFF10B981).withOpacity(0.05),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: const Color(0xFF10B981).withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF10B981),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.monetization_on,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'السعر',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${item['price'] ?? 'غير محدد'} دينار عراقي',
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF10B981),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // التفاصيل
+                      if (item['details'] != null &&
+                          item['details'].isNotEmpty) ...[
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.grey.withOpacity(0.1),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(
+                                        0xFF1E88E5,
+                                      ).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.description,
+                                      color: Color(0xFF1E88E5),
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  const Text(
+                                    'تفاصيل العنصر',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF2D3748),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                item['details'],
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: Color(0xFF4A5568),
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+
+                      // معلومات إضافية
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildInfoCard(
+                              'الحالة',
+                              item['status'] ?? 'pending',
+                              Icons.info_outline,
+                              const Color(0xFF1E88E5),
+                              isStatus: true,
+                              item: item,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          if (item['createdAt'] != null)
+                            Expanded(
+                              child: _buildInfoCard(
+                                'تاريخ الإضافة',
+                                _formatDate(item['createdAt']),
+                                Icons.calendar_today,
+                                Colors.orange,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // أزرار التحكم في الأسفل
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.05),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    if (item['status'] == 'pending') ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildActionButton(
+                              'رفض العنصر',
+                              Icons.cancel,
+                              Colors.red,
+                              () {
+                                Navigator.pop(context);
+                                _rejectItem(item);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildActionButton(
+                              'موافقة',
+                              Icons.check_circle,
+                              const Color(0xFF10B981),
+                              () {
+                                Navigator.pop(context);
+                                _approveItem(item);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildActionButton(
+                            'عرض الأوقات المحجوزة',
+                            Icons.event_busy,
+                            const Color(0xFF1E88E5),
+                            () => _showBookedTimes(item),
+                            isOutlined: true,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildActionButton(
+                            'حجز العنصر',
+                            Icons.event_available,
+                            const Color(0xFF10B981),
+                            () => _showBookingDialog(item),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // دالة إنشاء معرض الصور الاحترافي
+  Widget _buildImageGallery(Map<String, dynamic> item) {
+    final images =
+        item['images'] as List<dynamic>? ??
+        item['imageUrls'] as List<dynamic>? ??
+        (item['imageUrl'] != null ? [item['imageUrl']] : []);
+
+    if (images.isEmpty) {
+      return Container(
+        height: 250,
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.image_not_supported, size: 64, color: Colors.grey),
+            SizedBox(height: 12),
+            Text(
+              'لا توجد صور متاحة',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      height: 300,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: PageView.builder(
+        itemCount: images.length,
+        itemBuilder: (context, index) {
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    images[index],
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: Colors.grey[200],
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.broken_image,
+                              size: 50,
+                              color: Colors.grey,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'خطأ في تحميل الصورة',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        color: Colors.grey[100],
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: const Color(0xFF1E88E5),
+                            value: loadingProgress.expectedTotalBytes != null
+                                ? loadingProgress.cumulativeBytesLoaded /
+                                      loadingProgress.expectedTotalBytes!
+                                : null,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  // مؤشر عدد الصور
+                  if (images.length > 1)
+                    Positioned(
+                      top: 16,
+                      right: 16,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${index + 1} / ${images.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // دالة إنشاء بطاقة معلومات
+  Widget _buildInfoCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color, {
+    bool isStatus = false,
+    Map<String, dynamic>? item,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (isStatus && item != null)
+            _buildStatusIndicator(item['status'] ?? 'pending')
+          else
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF2D3748),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // دالة إنشاء أزرار الإجراءات
+  Widget _buildActionButton(
+    String text,
+    IconData icon,
+    Color color,
+    VoidCallback onPressed, {
+    bool isOutlined = false,
+  }) {
+    return SizedBox(
+      height: 50,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
+        label: Text(
+          text,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isOutlined ? Colors.transparent : color,
+          foregroundColor: isOutlined ? color : Colors.white,
+          side: isOutlined ? BorderSide(color: color, width: 2) : null,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          elevation: isOutlined ? 0 : 2,
+        ),
+      ),
+    );
+  }
+
+  // دالة عرض الأوقات المحجوزة
+  void _showBookedTimes(Map<String, dynamic> item) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.event_busy, color: Color(0xFF1E88E5)),
+            SizedBox(width: 8),
+            Text('الأوقات المحجوزة'),
+          ],
+        ),
+        content: Container(
+          width: double.maxFinite,
+          constraints: const BoxConstraints(maxHeight: 400),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('عنصر: ${item['name'] ?? 'غير محدد'}'),
+              const SizedBox(height: 16),
+              const Text(
+                'لا توجد حجوزات حالياً',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('close'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // دالة عرض نافذة الحجز
+  void _showBookingDialog(Map<String, dynamic> item) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.event_available, color: Color(0xFF10B981)),
+            SizedBox(width: 8),
+            Text('حجز العنصر'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('عنصر: ${item['name'] ?? 'غير محدد'}'),
+            const SizedBox(height: 8),
+            Text('السعر: ${item['price'] ?? 'غير محدد'} دينار عراقي'),
+            const SizedBox(height: 16),
+            const Text(
+              'اختر تاريخ الحجز:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            // هنا يمكن إضافة DatePicker
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.calendar_today, color: Colors.grey),
+                  SizedBox(width: 8),
+                  Text('اختر التاريخ', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('cancel'.tr()),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('تم الحجز بنجاح!'),
+                  backgroundColor: Color(0xFF10B981),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF10B981),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('تأكيد الحجز'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusIndicator(String status) {
+    Color color;
+    String text;
+    IconData icon;
+
+    switch (status) {
+      case 'approved':
+        color = const Color(0xFF10B981);
+        text = 'معتمد';
+        icon = Icons.check_circle;
+        break;
+      case 'rejected':
+        color = Colors.red;
+        text = 'مرفوض';
+        icon = Icons.cancel;
+        break;
+      default:
+        color = Colors.orange;
+        text = 'قيد المراجعة';
+        icon = Icons.hourglass_empty;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Helper method to safely parse price from different data types
+  num _parsePrice(dynamic priceValue) {
+    if (priceValue == null) return 0;
+    if (priceValue is num) return priceValue;
+    if (priceValue is String) {
+      try {
+        return num.parse(priceValue);
+      } catch (e) {
+        return 0;
+      }
+    }
+    return 0;
+  }
+
+  Future<void> _approveItem(Map<String, dynamic> item) async {
+    try {
+      final providerId = item['providerId'];
+
+      // الحصول على معلومات المزود
+      final providerDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(providerId)
+          .get();
+
+      if (!providerDoc.exists) {
+        throw Exception('بيانات المزود غير موجودة');
+      }
+
+      final providerData = providerDoc.data()!;
+      final serviceName = providerData['serviceName'] as String?;
+
+      if (serviceName != null) {
+        final category = _getServiceCategory(serviceName);
+
+        // نشر العنصر مباشرة
+        final publishedItemRef = FirebaseFirestore.instance
+            .collection('published_items')
+            .doc();
+
+        await publishedItemRef.set({
+          'itemId': publishedItemRef.id,
+          'providerId': providerId,
+          'providerName':
+              providerData['providerName'] ??
+              providerData['displayName'] ??
+              'مزود خدمة',
+          'category': category,
+          'serviceName': serviceName,
+          'name': item['name'] ?? '',
+          'details': item['details'] ?? '',
+          'price': _parsePrice(item['price']),
+          'images': item['images'] ?? item['imageUrls'] ?? [],
+          'imageUrl': _getFirstImage(item['images'] ?? item['imageUrls'] ?? []),
+          'isActive': true,
+          'bookedDates': <String>[],
+          'totalBookings': 0,
+          'rating': 0.0,
+          'reviewCount': 0,
+          'publishedAt': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        print('✅ تم نشر العنصر: ${item['name']}');
+      }
+
+      // تحديث العنصر الأصلي
+      await FirebaseFirestore.instance
+          .collection('provider_items')
+          .doc(item['id'])
+          .update({
+            'status': 'active', // تغيير من approved إلى active
+            'approvedAt': FieldValue.serverTimestamp(),
+            'rejectedAt': null,
+            'adminComments': 'تمت الموافقة من قبل الإدارة',
+          });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ تمت الموافقة ونشر العنصر بنجاح!'),
+          backgroundColor: Color(0xFF10B981),
+        ),
+      );
+
+      _loadProviderRequests(); // إعادة تحميل البيانات
+    } catch (e) {
+      print('❌ خطأ في الموافقة على العنصر: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حدث خطأ أثناء الموافقة: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _rejectItem(Map<String, dynamic> item) async {
+    final TextEditingController commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('رفض العنصر'),
+        content: TextField(
+          controller: commentController,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'سبب الرفض',
+            border: OutlineInputBorder(),
+            hintText: 'أدخل سبب رفض هذا العنصر...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('cancel'.tr()),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              try {
+                await FirebaseFirestore.instance
+                    .collection('provider_items')
+                    .doc(item['id'])
+                    .update({
+                      'status': 'rejected',
+                      'rejectedAt': FieldValue.serverTimestamp(),
+                      'approvedAt': null,
+                      'adminComments': commentController.text.trim(),
+                    });
+
+                Navigator.pop(context);
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('تم رفض العنصر')));
+
+                _loadProviderRequests(); // إعادة تحميل البيانات
+              } catch (e) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('خطأ: $e')));
+              }
+            },
+            child: const Text('reject'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approveNewRequest(Map<String, dynamic> requestData) async {
+    try {
+      final requestId = requestData['requestId'];
+      // استخراج معرف المزود مع إعطاء الأولوية للحقل الصحيح
+      final providerId =
+          requestData['providerId'] ??
+          requestData['providerPhone'] ??
+          requestData['userPhone'] ??
+          requestData['phone'];
+      final providerName =
+          requestData['providerName'] ??
+          requestData['userName'] ??
+          requestData['name'] ??
+          requestData['displayName'];
+      final serviceName =
+          requestData['serviceType'] ?? requestData['serviceName'];
+      final items = requestData['items'] as List<dynamic>? ?? [];
+
+      print('🔄 بدء عملية موافقة المزود: $providerId');
+      print('📋 بيانات الطلب الكاملة: $requestData');
+      print('📝 اسم المزود: $providerName');
+      print('🔧 نوع الخدمة: $serviceName');
+      print('📦 عدد العناصر: ${items.length}');
+
+      // تحديد فئة الخدمة
+      String category = _getServiceCategory(serviceName);
+      String arabicCollection = _getArabicCollection(serviceName);
+      print('🏷️ فئة الخدمة: $category');
+      print('🏷️ مجموعة الخدمة بالعربي: $arabicCollection');
+
+      // تحذير في حال التصنيف خاطئ
+      if (category == 'other' &&
+          serviceName != null &&
+          !serviceName.toLowerCase().contains('عامة') &&
+          !serviceName.toLowerCase().contains('general')) {
+        print(
+          '⚠️ تحذير: الخدمة "$serviceName" تم تصنيفها كـ "other" - قد تكون هناك مشكلة في التصنيف!',
+        );
+      }
+
+      // التحقق من كون الخدمة قاعة أعراس
+      bool isHallProvider =
+          serviceName == 'قاعات اعراس' ||
+          serviceName == 'قاعة عرس' ||
+          serviceName == 'hall' ||
+          requestData['isHallProvider'] == true;
+
+      print('🏛️ هل هذا مزود قاعة أعراس؟ $isHallProvider');
+
+      // التأكد من وجود البيانات الأساسية
+      if (providerId == null || providerId.isEmpty) {
+        throw Exception('معرف المزود مفقود');
+      }
+
+      // حذف أي مزود سابق بنفس المعرف لتجنب الازدواجية
+      try {
+        await FirebaseFirestore.instance
+            .collection('published_providers')
+            .doc(providerId)
+            .delete();
+        print('🗑️ تم حذف المزود السابق بالمعرف: $providerId');
+      } catch (e) {
+        print('ℹ️ لا يوجد مزود سابق بهذا المعرف: $e');
+      }
+
+      // تحديث حالة الطلب إلى معتمد
+      await FirebaseFirestore.instance
+          .collection('provider_requests')
+          .doc(requestId)
+          .update({
+            'status': 'approved',
+            'approvedAt': FieldValue.serverTimestamp(),
+            'adminComments': 'تمت الموافقة على الطلب من قبل الإدارة',
+          });
+
+      // تحديث حالة الحساب في provider_services
+      await FirebaseFirestore.instance
+          .collection('provider_services')
+          .doc(providerId)
+          .update({
+            'status': 'approved',
+            'approvedAt': FieldValue.serverTimestamp(),
+          });
+
+      // تحديث حالة الحساب في providers
+      await FirebaseFirestore.instance
+          .collection('providers')
+          .doc(providerId)
+          .update({
+            'status': 'approved',
+            'approvedAt': FieldValue.serverTimestamp(),
+          });
+
+      // إنشاء مزود الخدمة في القائمة المنشورة
+      final providerDocRef = FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(providerId);
+
+      print('📝 إنشاء مزود في published_providers مع ID: $providerId');
+      print('📝 الفئة: $category');
+      print('📝 اسم المزود: $providerName');
+
+      // إعداد البيانات للحفظ
+      // اسم المزود (اسم المستخدم/رقم الهاتف فقط)
+      final finalProviderName =
+          requestData['providerName'] ??
+          requestData['userName'] ??
+          requestData['phone'] ??
+          requestData['name'] ??
+          'مزود خدمة';
+      // اسم الخدمة التجاري فقط (لا يسمح أن يكون اسم المستخدم)
+      String finalServiceName = '';
+      if (requestData['serviceName'] != null &&
+          requestData['serviceName'].toString().trim().isNotEmpty) {
+        finalServiceName = requestData['serviceName'].toString().trim();
+      } else if (requestData['name'] != null &&
+          requestData['name'].toString().trim().isNotEmpty) {
+        finalServiceName = requestData['name'].toString().trim();
+      }
+      // إذا كان finalServiceName يساوي اسم المستخدم أو رقم الهاتف أو فارغ، اجعله "اسم الخدمة غير محدد"
+      if (finalServiceName == requestData['userName'] ||
+          finalServiceName == requestData['providerName'] ||
+          finalServiceName == requestData['phone'] ||
+          finalServiceName.isEmpty) {
+        finalServiceName = 'اسم الخدمة غير محدد';
+      }
+      final finalGovernorate =
+          requestData['userGovernorate'] ??
+          requestData['governorate'] ??
+          requestData['serviceArea'] ??
+          requestData['area'] ??
+          '';
+      final finalArea =
+          requestData['area'] ??
+          requestData['serviceArea'] ??
+          requestData['userGovernorate'] ??
+          requestData['governorate'] ??
+          '';
+      final finalPhone =
+          requestData['providerPhone'] ??
+          requestData['userPhone'] ??
+          requestData['phone'] ??
+          '';
+
+      print('🔍 البيانات النهائية:');
+      print('  - الاسم: $finalProviderName');
+      print('  - الخدمة: $finalServiceName');
+      print('  - المحافظة: $finalGovernorate');
+      print('  - المنطقة: $finalArea');
+      print('  - الهاتف: $finalPhone');
+
+      // بيانات إضافية لقاعات الأعراس
+      Map<String, dynamic> providerData = {
+        'providerId': providerId,
+        'providerName': finalProviderName, // اسم المستخدم فقط
+        'userName': requestData['userName'] ?? finalProviderName,
+        'serviceName': finalServiceName, // اسم الخدمة التجاري فقط
+        'name': finalServiceName,
+        'serviceType': requestData['serviceType'] ?? category,
+        'services':
+            requestData['services'] ?? [requestData['serviceType'] ?? category],
+        'category': category,
+        'categoryArabic': arabicCollection,
+        'phone': finalPhone,
+        'userPhone': finalPhone,
+        'providerPhone': finalPhone,
+        'governorate': finalGovernorate,
+        'userGovernorate': finalGovernorate,
+        'area': finalArea,
+        'userArea': finalArea,
+        'location': requestData['location'] ?? '',
+        'latitude': requestData['latitude'],
+        'longitude': requestData['longitude'],
+        // صورة الخدمة فقط (بدون أي fallback غير احترافي)
+        'serviceImage':
+            requestData['serviceImage'] ??
+            requestData['serviceImageUrl'] ??
+            requestData['profileImage'] ??
+            requestData['imageUrl'] ??
+            '',
+        'serviceImageUrl':
+            requestData['serviceImage'] ??
+            requestData['serviceImageUrl'] ??
+            requestData['profileImage'] ??
+            requestData['imageUrl'] ??
+            '',
+        'profileImage':
+            requestData['profileImage'] ??
+            requestData['serviceImage'] ??
+            requestData['imageUrl'] ??
+            '',
+        'imageUrl':
+            requestData['imageUrl'] ??
+            requestData['serviceImage'] ??
+            requestData['profileImage'] ??
+            '',
+        'creditCard': requestData['creditCard'] ?? '',
+        'accountType': requestData['accountType'] ?? 'provider',
+        'description': requestData['description'] ?? '',
+        'rating': 0.0,
+        'reviewCount': 0,
+        'totalBookings': 0,
+        'isActive': true,
+        'publishedAt': FieldValue.serverTimestamp(),
+        'createdAt': requestData['createdAt'] ?? FieldValue.serverTimestamp(),
+        'submittedAt': requestData['submittedAt'] ?? requestData['createdAt'],
+      };
+
+      // إضافة بيانات خاصة بقاعات الأعراس
+      if (isHallProvider) {
+        // نسخ جميع بيانات القاعة من hallData إذا كانت موجودة
+        Map<String, dynamic> hallData = requestData['hallData'] ?? {};
+
+        providerData.addAll({
+          'capacity':
+              hallData['capacity'] ??
+              requestData['expectedCapacity'] ??
+              requestData['capacity'] ??
+              '300 شخص',
+          'features':
+              requestData['hallFeatures'] ??
+              [
+                'نظام صوت متطور',
+                'إضاءة احترافية',
+                'تكييف مركزي',
+                'مواقف سيارات',
+              ],
+          'price':
+              hallData['basePrice'] ??
+              requestData['price'] ??
+              requestData['basePrice'] ??
+              0,
+          'serviceType': 'قاعات اعراس',
+          'isHallProvider': true,
+          'hallName':
+              hallData['hallName'] ??
+              requestData['hallName'] ??
+              finalProviderName,
+          'basePrice': hallData['basePrice'] ?? requestData['basePrice'] ?? 0,
+
+          // الخدمات الضمنية - هذا هو الأهم!
+          'includedServices':
+              hallData['includedServices'] ??
+              requestData['includedServices'] ??
+              [],
+          'totalServices':
+              hallData['totalServices'] ??
+              (hallData['includedServices'] ?? []).length,
+          'totalIncludedPrice': hallData['totalIncludedPrice'] ?? 0,
+
+          // صور القاعة
+          'hallImages':
+              hallData['hallImages'] ?? requestData['hallImages'] ?? [],
+
+          // نسخ hallData كاملة للحفاظ على جميع البيانات
+          'hallData': hallData.isNotEmpty ? hallData : null,
+        });
+
+        print('🏛️ تمت إضافة البيانات الخاصة بقاعة الأعراس');
+        print(
+          '📋 عدد الخدمات الضمنية: ${(hallData['includedServices'] ?? []).length}',
+        );
+      }
+
+      await providerDocRef.set(providerData, SetOptions(merge: true));
+
+      print('✅ تم إنشاء مزود الخدمة بنجاح في published_providers');
+      print('📄 معرف الوثيقة: ${providerDocRef.id}');
+      print('📊 البيانات المحفوظة:');
+      print('   - providerId: $providerId');
+      print('   - providerName: $finalProviderName');
+      print('   - category: $category');
+      print('   - isHallProvider: $isHallProvider');
+      print('   - isActive: true');
+
+      // التحقق من حفظ البيانات
+      final savedDoc = await providerDocRef.get();
+      if (savedDoc.exists) {
+        print('✅ تم التحقق: الوثيقة موجودة في published_providers');
+        print('   - البيانات المحفوظة: ${savedDoc.data()}');
+      } else {
+        print('❌ خطأ: الوثيقة غير موجودة بعد الحفظ!');
+      }
+
+      // نشر العناصر
+      int publishedItemsCount = 0;
+
+      if (isHallProvider) {
+        // نشر قاعة الأعراس في مجموعة hall
+        print('🏛️ نشر قاعة الأعراس في مجموعة hall...');
+
+        Map<String, dynamic> hallData = requestData['hallData'] ?? {};
+        final hallDocRef = FirebaseFirestore.instance.collection('hall').doc();
+
+        final hallPayload = {
+          'id': hallDocRef.id,
+          'providerId': providerId,
+          'providerName': finalProviderName,
+          'providerPhone': finalPhone,
+          'serviceType': 'قاعات اعراس',
+          'serviceName': 'قاعات اعراس',
+          'hallName':
+              hallData['hallName'] ??
+              requestData['hallName'] ??
+              finalProviderName,
+          'name':
+              hallData['hallName'] ??
+              requestData['hallName'] ??
+              finalProviderName,
+          'description':
+              hallData['description'] ?? requestData['description'] ?? '',
+          'details':
+              hallData['description'] ?? requestData['description'] ?? '',
+          'capacity': hallData['capacity'] ?? requestData['capacity'] ?? '300',
+          'basePrice': hallData['basePrice'] ?? requestData['basePrice'] ?? 0,
+          'price': hallData['basePrice'] ?? requestData['basePrice'] ?? 0,
+          'location': requestData['location'] ?? '',
+          'governorate': finalGovernorate,
+          'area': finalArea,
+          'imageUrls':
+              hallData['hallImages'] ?? requestData['hallImages'] ?? [],
+          'imageUrl': _getFirstImage(
+            hallData['hallImages'] ?? requestData['hallImages'] ?? [],
+          ),
+          'includedServices':
+              hallData['includedServices'] ??
+              requestData['includedServices'] ??
+              [],
+          'totalServices':
+              (hallData['includedServices'] ??
+                      requestData['includedServices'] ??
+                      [])
+                  .length,
+          'totalIncludedPrice':
+              hallData['totalIncludedPrice'] ??
+              requestData['totalIncludedPrice'] ??
+              0,
+          'isHallProvider': true,
+          'isActive': true,
+          'status': 'approved',
+          'bookedDates': <String>[],
+          'totalBookings': 0,
+          'rating': 0.0,
+          'reviewCount': 0,
+          'publishedAt': FieldValue.serverTimestamp(),
+          'createdAt': FieldValue.serverTimestamp(),
+          'approvedAt': FieldValue.serverTimestamp(),
+        };
+
+        await hallDocRef.set(hallPayload);
+
+        publishedItemsCount = 1;
+        print('✅ تم نشر قاعة الأعراس في مجموعة hall بمعرف: ${hallDocRef.id}');
+
+        // نشر في published_items أيضاً (للتوافق مع شاشة العناصر)
+        try {
+          final publishedItemRef = FirebaseFirestore.instance
+              .collection('published_items')
+              .doc(hallDocRef.id);
+          await publishedItemRef.set(hallPayload);
+          print(
+            '✅ تم نشر القاعة أيضاً في published_items بمعرف: ${publishedItemRef.id}',
+          );
+        } catch (e) {
+          print('⚠️ تعذر نشر القاعة في published_items: $e');
+        }
+
+        // التحقق من حفظ البيانات في hall
+        final savedHallDoc = await hallDocRef.get();
+        if (savedHallDoc.exists) {
+          print('✅ تم التحقق: القاعة موجودة في مجموعة hall');
+          final savedData = savedHallDoc.data();
+          print('   - اسم القاعة: ${savedData?['hallName']}');
+          print('   - providerId: ${savedData?['providerId']}');
+          print('   - السعة: ${savedData?['capacity']}');
+        } else {
+          print('❌ خطأ: القاعة غير موجودة في مجموعة hall بعد الحفظ!');
+        }
+
+        // نشر أيضاً في مجموعة عربية مطابقة (قاعات اعراس)
+        try {
+          final hallArabicRef = FirebaseFirestore.instance
+              .collection(arabicCollection)
+              .doc(hallDocRef.id);
+          await hallArabicRef.set(hallPayload);
+          print(
+            '✅ تم نشر القاعة أيضاً في مجموعة "$arabicCollection" بمعرف: ${hallArabicRef.id}',
+          );
+        } catch (e) {
+          print('⚠️ تعذر النشر في مجموعة "$arabicCollection": $e');
+        }
+      } else {
+        // نشر العناصر العادية في المجموعة المناسبة (restaurant, cake, car, etc.)
+        print('📦 نشر العناصر في مجموعة $category...');
+
+        // دمج العناصر القديمة مع الجديدة
+        List<dynamic> allItems = [];
+
+        // إضافة العناصر الجديدة
+        allItems.addAll(items);
+
+        // لا نضيف العناصر القديمة هنا لأنها منشورة مسبقاً
+        // فقط ننشر العناصر الجديدة
+        print('📦 عدد العناصر الجديدة للنشر: ${items.length}');
+
+        for (var item in items) {
+          final itemDocRef = FirebaseFirestore.instance
+              .collection(category)
+              .doc();
+
+          final itemPayload = {
+            'id': itemDocRef.id,
+            'providerId': providerId,
+            'providerName': finalProviderName,
+            'providerPhone': finalPhone,
+            'category': category,
+            'categoryArabic': arabicCollection,
+            'serviceName': finalServiceName,
+            'serviceType': finalServiceName,
+            'location': requestData['location'] ?? '',
+            'governorate': finalGovernorate,
+            'area': finalArea,
+            'phone': finalPhone,
+            'name': item['name'] ?? '',
+            'details': item['details'] ?? '',
+            'price': _parsePrice(item['price']),
+            'imageUrls': item['imageUrls'] ?? item['images'] ?? [],
+            'imageUrl': _getFirstImage(
+              item['imageUrls'] ?? item['images'] ?? [],
+            ),
+            'isActive': true,
+            'status': 'approved',
+            'bookedDates': <String>[],
+            'totalBookings': 0,
+            'rating': 0.0,
+            'reviewCount': 0,
+            'publishedAt': FieldValue.serverTimestamp(),
+            'createdAt': FieldValue.serverTimestamp(),
+            'approvedAt': FieldValue.serverTimestamp(),
+          };
+
+          await itemDocRef.set(itemPayload);
+
+          publishedItemsCount++;
+          print('✅ تم نشر عنصر: ${item['name']} في مجموعة $category');
+
+          // نشر في published_items أيضاً (للتوافق مع شاشة العناصر)
+          try {
+            final publishedItemRef = FirebaseFirestore.instance
+                .collection('published_items')
+                .doc(itemDocRef.id);
+            await publishedItemRef.set(itemPayload);
+            print(
+              '✅ تم نشر العنصر أيضاً في published_items بمعرف: ${publishedItemRef.id}',
+            );
+          } catch (e) {
+            print('⚠️ تعذر نشر العنصر في published_items: $e');
+          }
+
+          // نشر أيضاً في المجموعة العربية المكافئة
+          try {
+            final itemArabicRef = FirebaseFirestore.instance
+                .collection(arabicCollection)
+                .doc(itemDocRef.id);
+            await itemArabicRef.set(itemPayload);
+            print(
+              '✅ تم نشر العنصر أيضاً في "$arabicCollection" بمعرف: ${itemArabicRef.id}',
+            );
+          } catch (e) {
+            print('⚠️ تعذر نشر العنصر في مجموعة "$arabicCollection": $e');
+          }
+        }
+      }
+
+      print('✅ تم نشر $publishedItemsCount عنصر');
+
+      // تحديث حالة العناصر في المجموعات الأصلية (hall, restaurant, etc.)
+      print('🔄 بدء تحديث حالة العناصر في المجموعات الأصلية...');
+      await _updateOriginalItemsStatus(providerId, category, 'approved');
+
+      // تحديث اسم المزود في البيانات الموجودة للتأكد من استخدام الاسم التجاري
+      await _updateExistingProviderData(providerId, finalProviderName);
+
+      // نسخ بيانات المزود إلى provider_services (للتوافق مع النظام القديم)
+      await FirebaseFirestore.instance
+          .collection('provider_services')
+          .doc(providerId)
+          .set({
+            'serviceName': finalServiceName,
+            'serviceType': requestData['serviceType'],
+            'providerId': providerId,
+            'providerName': finalProviderName,
+            'providerPhone': finalPhone,
+            'location': requestData['location'],
+            'area': finalArea,
+            'governorate': finalGovernorate,
+            'createdAt': FieldValue.serverTimestamp(),
+            'status': 'approved',
+          });
+
+      // طباعة ملخص نهائي
+      print('');
+      print('═══════════════════════════════════════════════');
+      print('🎉 ملخص الموافقة والنشر:');
+      print('═══════════════════════════════════════════════');
+      print('✅ المزود: $finalProviderName (ID: $providerId)');
+      print('✅ الفئة: $category (عربي: $arabicCollection)');
+      print('✅ نوع: ${isHallProvider ? "قاعة أعراس" : "خدمة عادية"}');
+      print('✅ تم النشر في published_providers: نعم');
+      print('✅ تم النشر في published_items: نعم');
+      if (isHallProvider) {
+        print('✅ تم النشر في مجموعة hall: نعم');
+        print('✅ تم النشر في مجموعة "$arabicCollection": نعم');
+      } else {
+        print('✅ عدد العناصر المنشورة في $category: $publishedItemsCount');
+        print(
+          '✅ عدد العناصر المنشورة في published_items: $publishedItemsCount',
+        );
+        print(
+          '✅ عدد العناصر المنشورة في "$arabicCollection": $publishedItemsCount',
+        );
+      }
+      print('═══════════════════════════════════════════════');
+      print('');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isHallProvider
+                ? '✅ تمت الموافقة ونشر قاعة الأعراس في 4 مجموعات بنجاح!'
+                : '✅ تمت الموافقة ونشر المزود و $publishedItemsCount عنصر في 4 مجموعات بنجاح!',
+          ),
+          backgroundColor: const Color(0xFF10B981),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      _loadProviderRequests(); // إعادة تحميل البيانات
+    } catch (e) {
+      print('❌ خطأ في الموافقة: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حدث خطأ أثناء الموافقة: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // دالة لتحديث حالة العناصر في المجموعات الأصلية
+  Future<void> _updateOriginalItemsStatus(
+    String providerId,
+    String category,
+    String newStatus,
+  ) async {
+    try {
+      print(
+        '🔄 تحديث عناصر المزود $providerId في مجموعة $category إلى حالة $newStatus',
+      );
+
+      // تحديد أسماء المجموعات التي قد تحتوي على العناصر
+      List<String> possibleCollections = [
+        'hall',
+        'restaurant',
+        'hotel',
+        'cake',
+        'flowers',
+        'photography',
+        'salon_care',
+        'honeymoon',
+        'bride_dress',
+        'groom_suit',
+        'car',
+        'car_decoration',
+        'other',
+      ];
+
+      int updatedItemsCount = 0;
+
+      // البحث في جميع المجموعات المحتملة وتحديث العناصر
+      for (String collectionName in possibleCollections) {
+        final itemsQuery = await FirebaseFirestore.instance
+            .collection(collectionName)
+            .where('providerId', isEqualTo: providerId)
+            .get();
+
+        if (itemsQuery.docs.isNotEmpty) {
+          print(
+            '📦 وجد ${itemsQuery.docs.length} عنصر في مجموعة $collectionName للمزود $providerId',
+          );
+
+          final batch = FirebaseFirestore.instance.batch();
+          for (var doc in itemsQuery.docs) {
+            batch.update(doc.reference, {
+              'status': newStatus,
+              'approvedAt': newStatus == 'approved'
+                  ? FieldValue.serverTimestamp()
+                  : null,
+              'rejectedAt': newStatus == 'rejected'
+                  ? FieldValue.serverTimestamp()
+                  : null,
+              'adminComments': newStatus == 'approved'
+                  ? 'تمت الموافقة على العنصر من قبل الإدارة'
+                  : (newStatus == 'rejected'
+                        ? 'تم رفض العنصر من قبل الإدارة'
+                        : ''),
+            });
+            updatedItemsCount++;
+          }
+
+          await batch.commit();
+          print(
+            '✅ تم تحديث ${itemsQuery.docs.length} عنصر في مجموعة $collectionName',
+          );
+        }
+      }
+
+      print('🎉 إجمالي العناصر المحدثة: $updatedItemsCount');
+    } catch (e) {
+      print('❌ خطأ في تحديث حالة العناصر الأصلية: $e');
+    }
+  }
+
+  // دالة لتحديث البيانات الموجودة للمزودين لضمان استخدام الاسم التجاري
+  Future<void> _updateExistingProviderData(
+    String providerId,
+    String correctProviderName,
+  ) async {
+    try {
+      // تحديث اسم المزود في published_providers
+      await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(providerId)
+          .update({'providerName': correctProviderName});
+
+      // تحديث اسم المزود في جميع العناصر المنشورة
+      final itemsQuery = await FirebaseFirestore.instance
+          .collection('published_items')
+          .where('providerId', isEqualTo: providerId)
+          .get();
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (var doc in itemsQuery.docs) {
+        batch.update(doc.reference, {'providerName': correctProviderName});
+      }
+
+      if (itemsQuery.docs.isNotEmpty) {
+        await batch.commit();
+        print(
+          '✅ تم تحديث ${itemsQuery.docs.length} عنصر بالاسم التجاري الصحيح',
+        );
+      }
+    } catch (e) {
+      print('⚠️ خطأ في تحديث البيانات الموجودة: $e');
+    }
+  }
+
+  /// تحويل اسم الخدمة بالعربي إلى معرف مجموعة Firestore (slug)
+  ///
+  /// الأسماء المدعومة:
+  /// - قاعات: 'قاعة عرس', 'قاعات اعراس', 'صالة', 'hall'
+  /// - كيك: 'كيك', 'حلويات'
+  /// - مطاعم: 'مطعم', 'مطاعم', 'طعام'
+  /// - سيارات: 'تأجير سيارات', 'تاجير السيارات', 'سيارة', 'سيارات', 'car'
+  /// - فساتين: 'فستان', 'فساتين', 'عروس', 'زفاف'
+  /// - بدلات رجالي: 'بدلة', 'بدلات', 'رجالي', 'رجالية', 'عريس'
+  /// - ورود: 'زهور', 'ورد', 'زهرة'
+  /// - صالونات: 'تجميل', 'صالون', 'عناية', 'مكياج'
+  /// - فنادق: 'فندق', 'فنادق', 'إقامة', 'نزل'
+  /// - شهر عسل: 'شهر عسل', 'سياحة', 'honeymoon'
+  /// - تزيين سيارات: 'تزيين' + 'سيار'
+  String _getServiceCategory(String? serviceName) {
+    if (serviceName == null || serviceName.isEmpty) {
+      return 'other';
+    }
+
+    final serviceNameLower = serviceName.toLowerCase();
+
+    // قاعات أعراس - أولوية عالية
+    if (serviceNameLower.contains('قاعة') ||
+        serviceNameLower.contains('قاعات') ||
+        serviceNameLower.contains('صالة') ||
+        serviceNameLower.contains('عرس') ||
+        serviceNameLower.contains('اعراس') ||
+        serviceNameLower.contains('hall')) {
+      return 'hall';
+    }
+    // كيك وحلويات
+    else if (serviceNameLower.contains('كيك') ||
+        serviceNameLower.contains('حلويات')) {
+      return 'cake';
+    }
+    // مطاعم
+    else if (serviceNameLower.contains('مطعم') ||
+        serviceNameLower.contains('مطاعم') ||
+        serviceNameLower.contains('طعام')) {
+      return 'restaurant';
+    }
+    // تأجير سيارات - تحسين الكشف
+    else if (serviceNameLower.contains('تأجير') ||
+        serviceNameLower.contains('سيارة') ||
+        serviceNameLower.contains('سيارات') ||
+        serviceNameLower.contains('نقل') ||
+        serviceNameLower == 'car') {
+      return 'car';
+    }
+    // فساتين زفاف
+    else if (serviceNameLower.contains('فستان') ||
+        serviceNameLower.contains('فساتين') ||
+        serviceNameLower.contains('عروس') ||
+        serviceNameLower.contains('زفاف')) {
+      return 'bride_dress';
+    }
+    // بدلات رجالي - تحسين الكشف
+    else if (serviceNameLower.contains('بدلة') ||
+        serviceNameLower.contains('بدلات') ||
+        serviceNameLower.contains('رجالي') ||
+        serviceNameLower.contains('رجالية') ||
+        serviceNameLower.contains('عريس')) {
+      return 'groom_suit';
+    }
+    // ورود وزهور
+    else if (serviceNameLower.contains('زهور') ||
+        serviceNameLower.contains('ورد') ||
+        serviceNameLower.contains('زهرة')) {
+      return 'flowers';
+    }
+    // صالونات تجميل
+    else if (serviceNameLower.contains('تجميل') ||
+        serviceNameLower.contains('صالون') ||
+        serviceNameLower.contains('عناية') ||
+        serviceNameLower.contains('مكياج')) {
+      return 'salon_care';
+    }
+    // فنادق
+    else if (serviceNameLower.contains('فندق') ||
+        serviceNameLower.contains('فنادق') ||
+        serviceNameLower.contains('إقامة') ||
+        serviceNameLower.contains('نزل')) {
+      return 'hotel';
+    }
+    // شهر عسل
+    else if (serviceNameLower.contains('شهر عسل') ||
+        serviceNameLower.contains('سياحة') ||
+        serviceNameLower.contains('honeymoon')) {
+      return 'honeymoon';
+    }
+    // تزيين سيارات
+    else if (serviceNameLower.contains('تزيين') &&
+        serviceNameLower.contains('سيار')) {
+      return 'car_decoration';
+    } else {
+      return 'other';
+    }
+  }
+
+  String _getFirstImage(dynamic images) {
+    if (images == null) return '';
+    if (images is List && images.isNotEmpty) {
+      return images[0].toString();
+    }
+    return images.toString();
+  }
+
+  // خريطة اسم الخدمة إلى اسم المجموعة بالعربي
+  String _getArabicCollection(String? serviceName) {
+    if (serviceName == null || serviceName.isEmpty) return 'خدمات عامة';
+    final s = serviceName.toLowerCase();
+
+    // قاعات أعراس
+    if (s.contains('قاعة') ||
+        s.contains('قاعات') ||
+        s.contains('صالة') ||
+        s.contains('عرس') ||
+        s.contains('اعراس') ||
+        s.contains('hall')) {
+      return 'قاعات اعراس';
+    }
+    // كيك وحلويات
+    if (s.contains('كيك') || s.contains('حلويات')) return 'كيك';
+    // مطاعم
+    if (s.contains('مطعم') || s.contains('مطاعم') || s.contains('طعام'))
+      return 'مطاعم';
+    // تأجير سيارات - محسّن
+    if (s.contains('تأجير') ||
+        s.contains('سيارة') ||
+        s.contains('سيارات') ||
+        s.contains('نقل') ||
+        s == 'car') {
+      return 'تأجير سيارات';
+    }
+    // فساتين زفاف
+    if (s.contains('فستان') ||
+        s.contains('فساتين') ||
+        s.contains('عروس') ||
+        s.contains('زفاف')) {
+      return 'فساتين زفاف';
+    }
+    // بدلات رجالية - محسّن
+    if (s.contains('بدلة') ||
+        s.contains('بدلات') ||
+        s.contains('رجالي') ||
+        s.contains('رجالية') ||
+        s.contains('عريس')) {
+      return 'بدلات رجالية';
+    }
+    // ورود وزهور
+    if (s.contains('زهور') || s.contains('ورد') || s.contains('زهرة'))
+      return 'ورود';
+    // صالونات تجميل
+    if (s.contains('تجميل') ||
+        s.contains('صالون') ||
+        s.contains('عناية') ||
+        s.contains('مكياج')) {
+      return 'صالونات تجميل';
+    }
+    // فنادق
+    if (s.contains('فندق') ||
+        s.contains('فنادق') ||
+        s.contains('إقامة') ||
+        s.contains('نزل')) {
+      return 'فنادق';
+    }
+    // شهر عسل
+    if (s.contains('شهر عسل') ||
+        s.contains('سياحة') ||
+        s.contains('honeymoon')) {
+      return 'شهر عسل';
+    }
+    // تزيين سيارات
+    if (s.contains('تزيين') && s.contains('سيار')) {
+      return 'تزيين السيارات';
+    }
+
+    return 'خدمات عامة';
+  }
+
+  Future<void> _rejectNewRequest(Map<String, dynamic> requestData) async {
+    final TextEditingController commentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('رفض الطلب'),
+        content: TextField(
+          controller: commentController,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'سبب الرفض',
+            border: OutlineInputBorder(),
+            hintText: 'أدخل سبب رفض هذا الطلب...',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('cancel'.tr()),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              try {
+                final requestId = requestData['requestId'];
+                final providerId =
+                    requestData['providerId'] ??
+                    requestData['providerPhone'] ??
+                    requestData['userPhone'];
+                final serviceName =
+                    requestData['serviceType'] ?? requestData['serviceName'];
+                String category = _getServiceCategory(serviceName);
+
+                await FirebaseFirestore.instance
+                    .collection('provider_requests')
+                    .doc(requestId)
+                    .update({
+                      'status': 'rejected',
+                      'rejectedAt': FieldValue.serverTimestamp(),
+                      'adminComments': commentController.text.trim(),
+                    });
+
+                // تحديث حالة العناصر في المجموعات الأصلية
+                if (providerId != null) {
+                  await _updateOriginalItemsStatus(
+                    providerId,
+                    category,
+                    'rejected',
+                  );
+                }
+
+                Navigator.pop(context);
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('تم رفض الطلب')));
+
+                _loadProviderRequests(); // إعادة تحميل البيانات
+              } catch (e) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('خطأ: $e')));
+              }
+            },
+            child: const Text('reject'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String? value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value ?? 'غير محدد',
+              style: const TextStyle(fontSize: 14, color: Color(0xFF2D3748)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _contactProvider(Map<String, dynamic> requestData) async {
+    final providerName =
+        requestData['name'] ?? requestData['providerName'] ?? 'مزود خدمة';
+    final providerPhone =
+        requestData['phone'] ?? requestData['providerPhone'] ?? '';
+    final providerId = requestData['providerId'] ?? providerPhone;
+
+    if (providerId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('معلومات المزود غير متوفرة')),
+      );
+      return;
+    }
+
+    // فتح محادثة مباشرة مع المزود
+    ChatHelper.startChatWithUser(
+      context: context,
+      otherUserId: providerId,
+      otherUserName: providerName,
+      otherUserRole: 'provider',
+    );
+  }
+
+  // وظيفة لتحديث جميع العناصر المعتمدة سابقاً لحل مشكلة العناصر المعلقة
+  Future<void> _updateAllApprovedItemsStatus() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('جاري تحديث العناصر المعتمدة...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      print('🔄 بدء تحديث جميع العناصر المعتمدة سابقاً...');
+
+      // الحصول على جميع الطلبات المعتمدة
+      final approvedRequestsSnapshot = await FirebaseFirestore.instance
+          .collection('provider_requests')
+          .where('status', isEqualTo: 'approved')
+          .get();
+
+      print('📊 عدد الطلبات المعتمدة: ${approvedRequestsSnapshot.docs.length}');
+
+      int totalUpdatedItems = 0;
+
+      // تحديث العناصر لكل طلب معتمد
+      for (var requestDoc in approvedRequestsSnapshot.docs) {
+        final requestData = requestDoc.data();
+        final providerId =
+            requestData['providerId'] ??
+            requestData['providerPhone'] ??
+            requestData['userPhone'];
+        final serviceName =
+            requestData['serviceType'] ?? requestData['serviceName'];
+
+        if (providerId != null) {
+          String category = _getServiceCategory(serviceName);
+          print('🔄 تحديث عناصر المزود $providerId في فئة $category');
+
+          // تحديث العناصر في المجموعات الأصلية
+          int updatedCount = await _updateOriginalItemsStatusWithCount(
+            providerId,
+            category,
+            'approved',
+          );
+          totalUpdatedItems += updatedCount;
+        }
+      }
+
+      Navigator.pop(context); // إغلاق dialog التحميل
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ تم تحديث $totalUpdatedItems عنصر بنجاح!'),
+          backgroundColor: const Color(0xFF10B981),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      print(
+        '🎉 انتهى تحديث العناصر المعتمدة - المجموع: $totalUpdatedItems عنصر',
+      );
+    } catch (e) {
+      Navigator.pop(context); // إغلاق dialog التحميل
+      print('❌ خطأ في تحديث العناصر المعتمدة: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حدث خطأ أثناء التحديث: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // نسخة معدلة من _updateOriginalItemsStatus تعيد عدد العناصر المحدثة
+  Future<int> _updateOriginalItemsStatusWithCount(
+    String providerId,
+    String category,
+    String newStatus,
+  ) async {
+    int updatedItemsCount = 0;
+
+    try {
+      print(
+        '🔄 تحديث عناصر المزود $providerId في مجموعة $category إلى حالة $newStatus',
+      );
+
+      // تحديد أسماء المجموعات التي قد تحتوي على العناصر
+      List<String> possibleCollections = [
+        'hall',
+        'restaurant',
+        'hotel',
+        'cake',
+        'flowers',
+        'photography',
+        'salon_care',
+        'honeymoon',
+        'bride_dress',
+        'groom_suit',
+        'car',
+        'car_decoration',
+        'other',
+      ];
+
+      // البحث في جميع المجموعات المحتملة وتحديث العناصر
+      for (String collectionName in possibleCollections) {
+        final itemsQuery = await FirebaseFirestore.instance
+            .collection(collectionName)
+            .where('providerId', isEqualTo: providerId)
+            .get();
+
+        if (itemsQuery.docs.isNotEmpty) {
+          print(
+            '📦 وجد ${itemsQuery.docs.length} عنصر في مجموعة $collectionName للمزود $providerId',
+          );
+
+          final batch = FirebaseFirestore.instance.batch();
+          for (var doc in itemsQuery.docs) {
+            batch.update(doc.reference, {
+              'status': newStatus,
+              'approvedAt': newStatus == 'approved'
+                  ? FieldValue.serverTimestamp()
+                  : null,
+              'rejectedAt': newStatus == 'rejected'
+                  ? FieldValue.serverTimestamp()
+                  : null,
+              'adminComments': newStatus == 'approved'
+                  ? 'تمت الموافقة على العنصر من قبل الإدارة'
+                  : (newStatus == 'rejected'
+                        ? 'تم رفض العنصر من قبل الإدارة'
+                        : ''),
+            });
+            updatedItemsCount++;
+          }
+
+          await batch.commit();
+          print(
+            '✅ تم تحديث ${itemsQuery.docs.length} عنصر في مجموعة $collectionName',
+          );
+        }
+      }
+
+      print('🎉 إجمالي العناصر المحدثة للمزود $providerId: $updatedItemsCount');
+    } catch (e) {
+      print('❌ خطأ في تحديث حالة العناصر الأصلية: $e');
+    }
+
+    return updatedItemsCount;
+  }
+
+  // دالة لعرض تفاصيل طلب قاعة الأعراس
+  Widget _buildHallProviderDetails(Map<String, dynamic> requestData) {
+    final hallName = requestData['hallName'] ?? 'قاعة أعراس';
+    final description = requestData['description'] ?? 'لا يوجد وصف';
+    final capacity = requestData['capacity'] ?? 'غير محدد';
+    final basePrice = requestData['basePrice'] ?? 0.0;
+    final includedServices =
+        requestData['includedServices'] as List<dynamic>? ?? [];
+    final hallImages = requestData['hallImages'] as List<dynamic>? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // معلومات القاعة الأساسية
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E88E5).withOpacity(0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFF1E88E5).withOpacity(0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.business,
+                    color: Color(0xFF1E88E5),
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'معلومات القاعة',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2D3748),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _buildInfoRow('اسم القاعة', hallName),
+              _buildInfoRow('الوصف', description),
+              _buildInfoRow('السعة', capacity),
+              _buildInfoRow('السعر الأساسي', '$basePrice IQD'),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // الخدمات الضمنية
+        if (includedServices.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10B981).withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF10B981).withOpacity(0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.checklist,
+                      color: Color(0xFF10B981),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'الخدمات الضمنية (${includedServices.length})',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...includedServices.map((service) {
+                  final serviceName = service['name'] ?? 'خدمة';
+                  final servicePrice = service['price'] ?? 0.0;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              color: Color(0xFF10B981),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              serviceName,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF2D3748),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          '$servicePrice IQD',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // صور القاعة
+        if (hallImages.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.photo_library,
+                      color: Colors.grey,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'صور القاعة (${hallImages.length})',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 120,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: hallImages.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        width: 120,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.grey.withOpacity(0.3),
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            hallImages[index],
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: Colors.grey[200],
+                                child: const Icon(
+                                  Icons.broken_image,
+                                  color: Colors.grey,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ],
+    );
+  }
+
+  // بناء كرت طلب عنصر جديد
+  Widget _buildNewItemRequestCard(Map<String, dynamic> request) {
+    final providerData = request['providerData'] as Map<String, dynamic>;
+    final items = request['items'] as List<Map<String, dynamic>>;
+    final pendingItems = request['pendingItems'] as List<Map<String, dynamic>>;
+    // تحديد إذا كان المزود مسجلاً/موافقاً عليه مسبقاً
+    final bool isRegisteredProvider =
+        (providerData['approved'] == true ||
+        providerData['isApproved'] == true ||
+        providerData['ownerApproved'] == true ||
+        providerData['approvedByOwner'] == true ||
+        providerData['status'] == 'approved' ||
+        providerData['published'] == true ||
+        providerData['isPublished'] == true);
+    // سجلات لتشخيص السبب عند عدم ظهور الشارة
+    print(
+      '🔎 NEW ITEM CARD for provider: ${providerData['providerId'] ?? providerData['id']}'
+      ' | approved=${providerData['approved']} isApproved=${providerData['isApproved']}'
+      ' ownerApproved=${providerData['ownerApproved']} approvedByOwner=${providerData['approvedByOwner']}'
+      ' status=${providerData['status']} published=${providerData['published']} isPublished=${providerData['isPublished']}',
+    );
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.orange.withOpacity(0.5), width: 2),
+        ),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.all(16),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          leading: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.add_box, color: Colors.orange, size: 24),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'طلب عنصر جديد',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (isRegisteredProvider)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10B981),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.verified, size: 14, color: Colors.white),
+                          SizedBox(width: 4),
+                          Text(
+                            'مزود مسجل',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                providerData['serviceName'] ??
+                    providerData['providerName'] ??
+                    'مزود خدمة',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2D3748),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFF10B981).withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.business,
+                      size: 16,
+                      color: Color(0xFF10B981),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'خدمة: ${providerData['serviceName'] ?? 'غير محدد'}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF10B981),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  if (providerData['governorate'] != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.location_on,
+                            size: 12,
+                            color: Colors.orange,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            providerData['governorate'],
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.fiber_new,
+                          size: 14,
+                          color: Colors.orange,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${pendingItems.length} عنصر جديد',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          children: [
+            // العناصر الجديدة المعلقة
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.new_releases,
+                        color: Colors.orange,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'العناصر الجديدة المعلقة:',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...pendingItems
+                      .map((item) => _buildPendingItemCard(item))
+                      .toList(),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // العناصر السابقة المعتمدة
+            if (items.where((i) => i['status'] != 'pending').isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'العناصر السابقة:',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2D3748),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...items
+                      .where((i) => i['status'] != 'pending')
+                      .map((item) => _buildItemCard(item))
+                      .toList(),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // بناء كرت العنصر المعلق مع أزرار الموافقة والرفض
+  Widget _buildPendingItemCard(Map<String, dynamic> item) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withOpacity(0.5), width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.inventory_2,
+                  color: Colors.orange,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item['name'] ?? 'عنصر غير محدد',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D3748),
+                      ),
+                    ),
+                    if (item['price'] != null)
+                      Text(
+                        '${PriceFormatter.formatString('${item['price']}')} د.ع',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.hourglass_empty, size: 14, color: Colors.orange),
+                    SizedBox(width: 4),
+                    Text(
+                      'معلق',
+                      style: TextStyle(
+                        color: Colors.orange,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (item['details'] != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              item['details'],
+              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _approveItem(item),
+                  icon: const Icon(Icons.check_circle, size: 18),
+                  label: const Text('approve'.tr()),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _rejectItem(item),
+                  icon: const Icon(Icons.cancel, size: 18),
+                  label: const Text('reject'.tr()),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.red),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => _showItemDetailsDialog(item),
+                icon: const Icon(Icons.info_outline),
+                color: Colors.blue,
+                tooltip: 'التفاصيل',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // دالة لعرض الموقع على الخريطة
+  void _showLocationOnMap(
+    BuildContext context,
+    double lat,
+    double lng,
+    String locationName,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          height: 500,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.location_on, color: Color(0xFF10B981)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'موقع: $locationName',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'الإحداثيات: $lat, $lng',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: LatLng(lat, lng),
+                      zoom: 15,
+                    ),
+                    markers: {
+                      Marker(
+                        markerId: const MarkerId('provider_location'),
+                        position: LatLng(lat, lng),
+                        infoWindow: InfoWindow(title: locationName),
+                      ),
+                    },
+                    myLocationButtonEnabled: true,
+                    zoomControlsEnabled: true,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  // فتح الموقع في تطبيق الخرائط
+                  final url =
+                      'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+                  if (await canLaunch(url)) {
+                    await launch(url);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('لا يمكن فتح الخرائط')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.open_in_new),
+                label: const Text('فتح في خرائط جوجل'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E88E5),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 45),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // دالة لعرض العناصر القديمة (الموجودة مسبقاً)
+  Widget _buildExistingItemCard(Map<String, dynamic> item, int index) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFF10B981).withOpacity(0.3),
+            width: 2,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // رأس الكارت مع رقم العنصر
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.1),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(10),
+                  topRight: Radius.circular(10),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item['name'] ?? 'عنصر قديم',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2D3748),
+                          ),
+                        ),
+                        if (item['price'] != null)
+                          Text(
+                            '${PriceFormatter.formatString('${item['price']}')} د.ع',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'موجود',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // محتوى الكارت
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (item['description'] != null &&
+                      item['description'].toString().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        item['description'],
+                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                      ),
+                    ),
+                  // عرض صور العنصر إذا كانت موجودة
+                  if (item['images'] != null &&
+                      (item['images'] as List).isNotEmpty)
+                    SizedBox(
+                      height: 80,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: (item['images'] as List).length,
+                        itemBuilder: (context, imgIndex) {
+                          return Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                (item['images'] as List)[imgIndex],
+                                width: 80,
+                                height: 80,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    width: 80,
+                                    height: 80,
+                                    color: Colors.grey[200],
+                                    child: const Icon(
+                                      Icons.broken_image,
+                                      color: Colors.grey,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

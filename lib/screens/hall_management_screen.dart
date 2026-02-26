@@ -1,0 +1,998 @@
+import 'package:flutter/material.dart';
+import '../utils/price_formatter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+
+class HallManagementScreen extends StatefulWidget {
+  final String providerId;
+
+  const HallManagementScreen({super.key, required this.providerId});
+
+  @override
+  _HallManagementScreenState createState() => _HallManagementScreenState();
+}
+
+class _HallManagementScreenState extends State<HallManagementScreen> {
+  Map<String, dynamic>? _hallData;
+  List<Map<String, dynamic>> _bookings = [];
+  bool _isLoading = true;
+  bool _isEditing = false;
+
+  // Controllers للتعديل
+  final _hallNameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _capacityController = TextEditingController();
+  final _priceController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _verifyHallProvider();
+  }
+
+  // فحص أن المزود هو مزود قاعة أعراس
+  Future<void> _verifyHallProvider() async {
+    try {
+      // البحث في published_providers أولاً
+      var providerDoc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(widget.providerId)
+          .get();
+
+      // إذا لم يكن موجوداً، ابحث في provider_requests
+      if (!providerDoc.exists) {
+        providerDoc = await FirebaseFirestore.instance
+            .collection('provider_requests')
+            .doc(widget.providerId)
+            .get();
+      }
+
+      if (!providerDoc.exists) {
+        _showError('مزود الخدمة غير موجود');
+        return;
+      }
+
+      final serviceType = providerDoc.data()?['serviceType'] ?? '';
+      if (serviceType != 'قاعات اعراس' && serviceType != 'قاعة عرس') {
+        _showError('هذه الخدمة مخصصة لمزودي قاعات الأعراس فقط');
+        Navigator.of(context).pop();
+        return;
+      }
+
+      // إذا كان التحقق ناجحاً، قم بتحميل البيانات
+      _loadHallData();
+    } catch (e) {
+      print('خطأ في التحقق: $e');
+      _showError('خطأ في التحقق من صحة المزود');
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  Future<void> _loadHallData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // جلب بيانات القاعة من published_providers أولاً
+      var hallDoc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(widget.providerId)
+          .get();
+
+      // إذا لم يكن موجوداً، ابحث في provider_requests
+      if (!hallDoc.exists) {
+        hallDoc = await FirebaseFirestore.instance
+            .collection('provider_requests')
+            .doc(widget.providerId)
+            .get();
+      }
+
+      if (hallDoc.exists) {
+        _hallData = hallDoc.data();
+        _populateControllers();
+      }
+
+      // جلب الحجوزات
+      final bookingsSnapshot = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('providerId', isEqualTo: widget.providerId)
+          .orderBy('eventDate', descending: false)
+          .get();
+
+      _bookings = bookingsSnapshot.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .toList();
+    } catch (e) {
+      print('خطأ في جلب بيانات القاعة: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _populateControllers() {
+    if (_hallData != null) {
+      _hallNameController.text = _hallData!['providerName'] ?? '';
+      _descriptionController.text = _hallData!['description'] ?? '';
+      _capacityController.text = _hallData!['capacity'] ?? '';
+      _priceController.text = PriceFormatter.formatString(
+        _hallData!['basePrice']?.toString() ?? '',
+      );
+    }
+  }
+
+  Future<void> _updateHallData() async {
+    if (_hallData == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final updatedData = {
+        'providerName': _hallNameController.text.trim(),
+        'description': _descriptionController.text.trim(),
+        'capacity': _capacityController.text.trim(),
+        'basePrice': PriceFormatter.parseToDouble(_priceController.text),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      // تحديث البيانات في published_providers إذا كان موجوداً
+      final publishedDoc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(widget.providerId)
+          .get();
+
+      if (publishedDoc.exists) {
+        await FirebaseFirestore.instance
+            .collection('published_providers')
+            .doc(widget.providerId)
+            .update(updatedData);
+      }
+
+      // تحديث البيانات في provider_requests إذا كان موجوداً
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('provider_requests')
+          .doc(widget.providerId)
+          .get();
+
+      if (requestDoc.exists) {
+        await FirebaseFirestore.instance
+            .collection('provider_requests')
+            .doc(widget.providerId)
+            .update(updatedData);
+      }
+
+      setState(() {
+        _hallData = {..._hallData!, ...updatedData};
+        _isEditing = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ تم تحديث بيانات القاعة بنجاح'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      _loadHallData(); // إعادة تحميل البيانات
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في تحديث البيانات: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _blockDate(DateTime date, {String? timeSlot}) async {
+    try {
+      final dateString = DateFormat('yyyy-MM-dd').format(date);
+
+      // تحديد المجموعة الصحيحة للتحديث
+      String collection = 'published_providers';
+
+      // التحقق من وجود المستند في published_providers
+      var doc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(widget.providerId)
+          .get();
+
+      // إذا لم يكن موجوداً، استخدم provider_requests
+      if (!doc.exists) {
+        collection = 'provider_requests';
+        doc = await FirebaseFirestore.instance
+            .collection('provider_requests')
+            .doc(widget.providerId)
+            .get();
+      }
+
+      // التحقق من وجود المستند
+      if (!doc.exists) {
+        throw Exception('لم يتم العثور على بيانات الخدمة');
+      }
+
+      if (timeSlot != null) {
+        // حجب فترة زمنية محددة فقط
+        final slotKey = '$dateString:$timeSlot';
+        await FirebaseFirestore.instance
+            .collection(collection)
+            .doc(widget.providerId)
+            .update({
+              'blockedTimeSlots': FieldValue.arrayUnion([slotKey]),
+            });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'تم حجب الفترة $timeSlot في ${DateFormat('dd/MM/yyyy').format(date)}',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        // حجب اليوم كاملاً
+        await FirebaseFirestore.instance
+            .collection(collection)
+            .doc(widget.providerId)
+            .update({
+              'blockedDates': FieldValue.arrayUnion([dateString]),
+            });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'تم حجب تاريخ ${DateFormat('dd/MM/yyyy').format(date)} بالكامل',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      _loadHallData();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في حجب التاريخ: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _unblockDate(String dateString) async {
+    try {
+      // تحديد المجموعة الصحيحة للتحديث
+      String collection = 'published_providers';
+
+      // التحقق من وجود المستند في published_providers
+      var doc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(widget.providerId)
+          .get();
+
+      // إذا لم يكن موجوداً، استخدم provider_requests
+      if (!doc.exists) {
+        collection = 'provider_requests';
+        doc = await FirebaseFirestore.instance
+            .collection('provider_requests')
+            .doc(widget.providerId)
+            .get();
+      }
+
+      // التحقق من وجود المستند
+      if (!doc.exists) {
+        throw Exception('لم يتم العثور على بيانات الخدمة');
+      }
+
+      await FirebaseFirestore.instance
+          .collection(collection)
+          .doc(widget.providerId)
+          .update({
+            'blockedDates': FieldValue.arrayRemove([dateString]),
+          });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إلغاء حجب التاريخ $dateString'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      _loadHallData();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في إلغاء حجب التاريخ: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _hallNameController.dispose();
+    _descriptionController.dispose();
+    _capacityController.dispose();
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F9FA),
+        appBar: AppBar(
+          title: const Text('إدارة القاعة'),
+          backgroundColor: const Color(0xFF2E7D32),
+          foregroundColor: Colors.white,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_hallData == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8F9FA),
+        appBar: AppBar(
+          title: const Text('إدارة القاعة'),
+          backgroundColor: const Color(0xFF2E7D32),
+          foregroundColor: Colors.white,
+        ),
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'لم يتم العثور على بيانات القاعة',
+                style: TextStyle(fontSize: 18, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA),
+      appBar: AppBar(
+        title: Text(_hallData!['providerName'] ?? 'إدارة القاعة'),
+        backgroundColor: const Color(0xFF2E7D32),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: Icon(_isEditing ? Icons.save : Icons.edit),
+            onPressed: _isEditing
+                ? _updateHallData
+                : () {
+                    setState(() {
+                      _isEditing = true;
+                    });
+                  },
+          ),
+          if (_isEditing)
+            IconButton(
+              icon: const Icon(Icons.cancel),
+              onPressed: () {
+                setState(() {
+                  _isEditing = false;
+                  _populateControllers();
+                });
+              },
+            ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // معلومات القاعة الأساسية
+            _buildHallInfoCard(),
+
+            const SizedBox(height: 16),
+
+            // الخدمات الضمنية
+            _buildServicesCard(),
+
+            const SizedBox(height: 16),
+
+            // إدارة التواريخ المحجوزة
+            _buildDateManagementCard(),
+
+            const SizedBox(height: 16),
+
+            // الحجوزات الحالية
+            _buildBookingsCard(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHallInfoCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.home_work, color: Color(0xFF2E7D32)),
+                const SizedBox(width: 8),
+                const Text(
+                  'معلومات القاعة',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E7D32),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (_isEditing) ...[
+              _buildEditableField('اسم القاعة', _hallNameController),
+              const SizedBox(height: 12),
+              _buildEditableField('الوصف', _descriptionController, maxLines: 3),
+              const SizedBox(height: 12),
+              _buildEditableField('السعة', _capacityController),
+              const SizedBox(height: 12),
+              _buildEditableField('السعر الأساسي', _priceController),
+            ] else ...[
+              _buildInfoRow('اسم القاعة', _hallData!['providerName'] ?? ''),
+              _buildInfoRow('الوصف', _hallData!['description'] ?? ''),
+              _buildInfoRow('السعة', _hallData!['capacity'] ?? ''),
+              _buildInfoRow(
+                'السعر الأساسي',
+                '${PriceFormatter.formatString('${_hallData!['basePrice'] ?? 0}')} دينار',
+              ),
+              _buildInfoRow('المحافظة', _hallData!['governorate'] ?? ''),
+              _buildInfoRow('المنطقة', _hallData!['area'] ?? ''),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServicesCard() {
+    final includedServices =
+        _hallData!['includedServices'] as List<dynamic>? ?? [];
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.room_service, color: Color(0xFF2E7D32)),
+                const SizedBox(width: 8),
+                const Text(
+                  'الخدمات الضمنية',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E7D32),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (includedServices.isEmpty)
+              const Text(
+                'لا توجد خدمات ضمنية',
+                style: TextStyle(color: Colors.grey),
+              )
+            else
+              ...includedServices.map(
+                (service) => Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2E7D32).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: const Color(0xFF2E7D32).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          service['name'] ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      Text(
+                        '${PriceFormatter.formatString('${service['price'] ?? 0}')} دينار',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2E7D32),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateManagementCard() {
+    final blockedDates = _hallData!['blockedDates'] as List<dynamic>? ?? [];
+    final blockedTimeSlots =
+        _hallData!['blockedTimeSlots'] as List<dynamic>? ?? [];
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.date_range, color: Color(0xFF2E7D32)),
+                const SizedBox(width: 8),
+                const Text(
+                  'إدارة التواريخ',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E7D32),
+                  ),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: () => _showDatePicker(),
+                  icon: const Icon(Icons.block, size: 16),
+                  label: const Text('حجب تاريخ'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (blockedDates.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.event_busy, size: 16, color: Colors.red),
+                  SizedBox(width: 4),
+                  Text(
+                    'أيام محجوبة بالكامل:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: blockedDates
+                    .map(
+                      (dateString) => Chip(
+                        avatar: Icon(
+                          Icons.calendar_today,
+                          size: 16,
+                          color: Colors.red[700],
+                        ),
+                        label: Text(dateString),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () => _unblockDate(dateString),
+                        backgroundColor: Colors.red.withOpacity(0.1),
+                        deleteIconColor: Colors.red,
+                      ),
+                    )
+                    .toList(),
+              ),
+              SizedBox(height: 16),
+            ],
+
+            if (blockedTimeSlots.isNotEmpty) ...[
+              Row(
+                children: [
+                  Icon(Icons.access_time, size: 16, color: Colors.orange),
+                  SizedBox(width: 4),
+                  Text(
+                    'فترات محجوبة جزئياً:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: blockedTimeSlots.map((slotKey) {
+                  final parts = slotKey.toString().split(':');
+                  final date = parts[0];
+                  final time = parts.length > 1
+                      ? parts.sublist(1).join(':')
+                      : '';
+                  return Chip(
+                    avatar: Icon(
+                      Icons.schedule,
+                      size: 16,
+                      color: Colors.orange[700],
+                    ),
+                    label: Text('$date | $time'),
+                    deleteIcon: const Icon(Icons.close, size: 16),
+                    onDeleted: () => _unblockTimeSlot(slotKey),
+                    backgroundColor: Colors.orange.withOpacity(0.1),
+                    deleteIconColor: Colors.orange,
+                  );
+                }).toList(),
+              ),
+            ],
+
+            if (blockedDates.isEmpty && blockedTimeSlots.isEmpty)
+              const Text(
+                'لا توجد تواريخ أو فترات محجوبة',
+                style: TextStyle(color: Colors.grey),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBookingsCard() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.event, color: Color(0xFF2E7D32)),
+                const SizedBox(width: 8),
+                Text(
+                  'الحجوزات (${_bookings.length})',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2E7D32),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            if (_bookings.isEmpty)
+              const Text(
+                'لا توجد حجوزات حالياً',
+                style: TextStyle(color: Colors.grey),
+              )
+            else
+              ...(_bookings
+                  .take(5)
+                  .map(
+                    (booking) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                booking['customerName'] ?? 'عميل',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _getStatusColor(
+                                    booking['status'] ?? 'pending',
+                                  ),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  _getStatusText(
+                                    booking['status'] ?? 'pending',
+                                  ),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'التاريخ: ${booking['eventDate'] ?? ''}',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                          Text(
+                            'الهاتف: ${booking['customerPhone'] ?? ''}',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
+
+            if (_bookings.length > 5)
+              TextButton(
+                onPressed: () {
+                  // عرض جميع الحجوزات
+                },
+                child: const Text('عرض جميع الحجوزات'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditableField(
+    String label,
+    TextEditingController controller, {
+    int maxLines = 1,
+  }) {
+    return TextFormField(
+      controller: controller,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        contentPadding: const EdgeInsets.all(12),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDatePicker() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+
+    if (picked != null) {
+      _showBlockTypeDialog(picked);
+    }
+  }
+
+  void _showBlockTypeDialog(DateTime date) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.block, color: Colors.orange, size: 24),
+            SizedBox(width: 8),
+            Text('نوع الحجب', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'التاريخ: ${DateFormat('dd/MM/yyyy').format(date)}',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 20),
+
+            ListTile(
+              leading: Icon(Icons.event_busy, color: Colors.red),
+              title: Text('حجب اليوم كاملاً'),
+              subtitle: Text('لن يتمكن أي عميل من الحجز في هذا اليوم'),
+              onTap: () {
+                Navigator.pop(context);
+                _blockDate(date);
+              },
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: Colors.grey[300]!),
+              ),
+            ),
+            SizedBox(height: 12),
+
+            ListTile(
+              leading: Icon(Icons.access_time, color: Colors.orange),
+              title: Text('حجب فترة محددة'),
+              subtitle: Text('حجب ساعات معينة من اليوم فقط'),
+              onTap: () {
+                Navigator.pop(context);
+                _showTimeSlotPicker(date);
+              },
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: Colors.grey[300]!),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTimeSlotPicker(DateTime date) async {
+    TimeOfDay? startTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      helpText: 'اختر وقت البداية',
+    );
+
+    if (startTime == null) return;
+
+    TimeOfDay? endTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: (startTime.hour + 1) % 24,
+        minute: startTime.minute,
+      ),
+      helpText: 'اختر وقت النهاية',
+    );
+
+    if (endTime == null) return;
+
+    final timeSlot =
+        '${startTime.format(context)} - ${endTime.format(context)}';
+    _blockDate(date, timeSlot: timeSlot);
+  }
+
+  Future<void> _unblockTimeSlot(String slotKey) async {
+    try {
+      String collection = 'published_providers';
+
+      var doc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(widget.providerId)
+          .get();
+
+      if (!doc.exists) {
+        collection = 'provider_requests';
+        doc = await FirebaseFirestore.instance
+            .collection('provider_requests')
+            .doc(widget.providerId)
+            .get();
+      }
+
+      if (!doc.exists) {
+        throw Exception('لم يتم العثور على بيانات الخدمة');
+      }
+
+      await FirebaseFirestore.instance
+          .collection(collection)
+          .doc(widget.providerId)
+          .update({
+            'blockedTimeSlots': FieldValue.arrayRemove([slotKey]),
+          });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إلغاء حجب الفترة'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      _loadHallData();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في إلغاء حجب الفترة: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'confirmed':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'cancelled':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getStatusText(String status) {
+    switch (status) {
+      case 'confirmed':
+        return 'مؤكد';
+      case 'pending':
+        return 'معلق';
+      case 'cancelled':
+        return 'ملغي';
+      default:
+        return 'غير محدد';
+    }
+  }
+}

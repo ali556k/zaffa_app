@@ -1,0 +1,804 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../widgets/custom_page_title.dart';
+import 'published_providers_screen.dart';
+
+class ServicesScreen extends StatefulWidget {
+  const ServicesScreen({super.key});
+
+  @override
+  _ServicesScreenState createState() => _ServicesScreenState();
+}
+
+class _ServicesScreenState extends State<ServicesScreen>
+    with AutomaticKeepAliveClientMixin {
+  DateTime? weddingDate;
+  Duration remaining = Duration();
+  Timer? _timer;
+  Map<String, int> serviceCounts = {};
+  bool isLoading = true;
+  bool _hasLoadedData = false;
+
+  @override
+  bool get wantKeepAlive => true; // للحفاظ على حالة الشاشة
+
+  @override
+  void initState() {
+    super.initState();
+    // لا نحمل البيانات فوراً، ننتظر حتى تُبنى الصفحة
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_hasLoadedData) {
+        _hasLoadedData = true;
+        _loadWeddingDate();
+        _loadServiceCounts();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startCountdown() {
+    _timer?.cancel();
+    if (weddingDate != null) {
+      _updateCountdown();
+      _timer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => _updateCountdown(),
+      );
+    }
+  }
+
+  void _updateCountdown() {
+    setState(() {
+      remaining = weddingDate!.difference(DateTime.now());
+    });
+  }
+
+  Future<void> _loadWeddingDate() async {
+    setState(() {
+      if (weddingDate != null) {
+        remaining = weddingDate!.difference(DateTime.now());
+      }
+    });
+    _startCountdown();
+  }
+
+  // تحميل عدد مزودي الخدمة لكل نوع خدمة
+  Future<void> _loadServiceCounts() async {
+    try {
+      final serviceTypes = [
+        'hall',
+        'hotel',
+        'cake',
+        'restaurant',
+        'bride_dress',
+        'salon_care',
+        'flowers',
+        'groom_suit',
+        'car',
+        'car_decoration',
+        'honeymoon',
+        'photography',
+      ];
+
+      for (String serviceType in serviceTypes) {
+        // تحميل من المجموعة الجديدة للمزودين المنشورين
+        final snapshot = await FirebaseFirestore.instance
+            .collection('published_providers')
+            .where('category', isEqualTo: serviceType)
+            .where('isActive', isEqualTo: true)
+            .get();
+
+        serviceCounts[serviceType] = snapshot.docs.length;
+      }
+
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('خطأ في تحميل أعداد الخدمات: $e');
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // مطلوب لـ AutomaticKeepAliveClientMixin
+
+    return Container(
+      color: const Color.fromARGB(255, 216, 208, 208),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Column(
+          children: [
+            CustomPageTitle('الصفحة الرئيسية'),
+            const SizedBox(height: 18),
+            if (isLoading)
+              const Center(child: CircularProgressIndicator())
+            else
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 0,
+                    vertical: 8,
+                  ),
+                  children: [
+                    _serviceImageButton('hall'), // قاعات اعراس
+                    _serviceImageButton('hotel'), // فنادق
+                    _serviceImageButton('cake'), // كيك
+                    _serviceImageButton('restaurant'), // طعام
+                    _serviceImageButton('bride_dress'), // فستان الزفاف
+                    _serviceImageButton('salon_care'), // صالون وعناية
+                    _serviceImageButton('flowers'), // ورد
+                    _serviceImageButton('groom_suit'), // بدلة رجالي
+                    _serviceImageButton('car'), // تاجير السيارات
+                    _serviceImageButton('car_decoration'), // تزيين السيارة
+                    _serviceImageButton('photography'), // التصوير
+                    _serviceImageButton('honeymoon'), // سياحة
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // دالة لتحويل معرف الخدمة إلى اسم الخدمة
+  String _getServiceName(String serviceId) {
+    switch (serviceId) {
+      case 'hall':
+        return 'قاعات اعراس';
+      case 'hotel':
+        return 'فنادق';
+      case 'cake':
+        return 'كيك';
+      case 'restaurant':
+        return 'طعام';
+      case 'bride_dress':
+        return 'فستان الزفاف';
+      case 'salon_care':
+        return 'صالون وعناية';
+      case 'flowers':
+        return 'ورد';
+      case 'groom_suit':
+        return 'بدلة رجالي';
+      case 'car':
+        return 'تاجير السيارات';
+      case 'car_decoration':
+        return 'تزيين السيارة';
+      case 'honeymoon':
+        return 'سياحة';
+      case 'photography':
+        return 'التصوير';
+      default:
+        return 'خدمة غير معروفة';
+    }
+  }
+
+  // تحويل معرف الخدمة إلى مسار Firestore (يجب أن يكون نفس الاسم)
+  String _getFirestorePath(String serviceId) {
+    return serviceId; // استخدام نفس الاسم مباشرة
+  }
+
+  Widget _serviceImageButton(String id) {
+    final firestorePath = _getFirestorePath(id);
+    final count = serviceCounts[firestorePath] ?? 0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      child: GestureDetector(
+        onTap: () {
+          // الانتقال إلى شاشة مزودي الخدمة المنشورين
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PublishedProvidersScreen(
+                category: id,
+                categoryTitle: _getServiceName(id),
+              ),
+            ),
+          );
+        },
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: SizedBox(
+                width: double.infinity,
+                height: 180,
+                child: Image.asset(
+                  'assets/$id.png',
+                  width: double.infinity,
+                  height: 180,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.center,
+                ),
+              ),
+            ),
+            // عرض عدد مزودي الخدمة
+            if (count > 0)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '$count مزود',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// شاشة فئات الخدمة - عرض مزودي الخدمة المعتمدين
+class ServiceCategoriesScreen extends StatefulWidget {
+  final String serviceId;
+  final String serviceName;
+
+  const ServiceCategoriesScreen({
+    super.key,
+    required this.serviceId,
+    required this.serviceName,
+  });
+
+  @override
+  State<ServiceCategoriesScreen> createState() =>
+      _ServiceCategoriesScreenState();
+}
+
+class _ServiceCategoriesScreenState extends State<ServiceCategoriesScreen> {
+  // جلب مزودي الخدمة المعتمدين لنوع خدمة معين
+  Future<List<Map<String, dynamic>>> _getApprovedProviders() async {
+    try {
+      print('🔍 جاري البحث عن مزودي الخدمة للخدمة: ${widget.serviceId}');
+
+      // البحث في مجموعة services عن الخدمات المعتمدة لهذا النوع
+      final servicesQuery = await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('items')
+          .where('isActive', isEqualTo: true)
+          .where('isApproved', isEqualTo: true) // فقط العناصر المعتمدة
+          .get();
+
+      print('📊 عدد العناصر الموجودة: ${servicesQuery.docs.length}');
+
+      // جمع معرفات مزودي الخدمة الفريدة
+      Set<String> providerIds = {};
+      Map<String, Map<String, dynamic>> providersData = {};
+
+      for (var doc in servicesQuery.docs) {
+        final data = doc.data();
+        print('📄 بيانات العنصر: $data');
+
+        final providerId = data['providerId'] as String?;
+        if (providerId != null && providerId.isNotEmpty) {
+          providerIds.add(providerId);
+
+          // حفظ بيانات المزود الأساسية من العنصر
+          if (!providersData.containsKey(providerId)) {
+            providersData[providerId] = {
+              'providerId': providerId,
+              'providerName': data['providerName'] ?? 'مزود خدمة',
+              'location': data['location'] ?? 'غير محدد',
+              'itemsCount': 1,
+              'serviceType': widget.serviceId,
+            };
+            print(
+              '✅ تم إضافة مزود جديد: ${data['providerName']} ($providerId)',
+            );
+          } else {
+            // زيادة عدد العناصر للمزود
+            providersData[providerId]!['itemsCount'] =
+                (providersData[providerId]!['itemsCount'] as int) + 1;
+            print('📈 زيادة عدد العناصر للمزود: ${data['providerName']}');
+          }
+        } else {
+          print('❌ عنصر بدون providerId أو providerId فارغ: $data');
+        }
+      }
+
+      print('🎯 عدد مزودي الخدمة النهائي: ${providersData.length}');
+      return providersData.values.toList();
+    } catch (e) {
+      print('❌ خطأ في جلب مزودي الخدمة: $e');
+      return [];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    print(
+      '🏗️ بناء ServiceCategoriesScreen للخدمة: ${widget.serviceId} - ${widget.serviceName}',
+    );
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'مزودو خدمة ${widget.serviceName}',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _getApprovedProviders(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'حدث خطأ في تحميل البيانات',
+                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => setState(() {}),
+                    child: Text('retry'.tr()),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final providers = snapshot.data ?? [];
+
+          if (providers.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.store_outlined, size: 80, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    'لا يوجد مزودو خدمة متاحون حالياً',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'سيظهر مزودو الخدمة عند إضافة عناصر معتمدة',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: providers.length,
+            itemBuilder: (context, index) {
+              final provider = providers[index];
+              final providerName = provider['providerName'] as String;
+              final location = provider['location'] as String;
+              final itemsCount = provider['itemsCount'] as int;
+              final providerId = provider['providerId'] as String;
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    // الانتقال إلى صفحة عرض عناصر هذا المزود
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ProviderItemsScreen(
+                          serviceId: widget.serviceId,
+                          providerId: providerId,
+                          providerName: providerName,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        // أيقونة المتجر
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E88E5).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF1E88E5).withOpacity(0.2),
+                              width: 1,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.store,
+                            color: Color(0xFF1E88E5),
+                            size: 30,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        // بيانات المزود
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                providerName,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on,
+                                    size: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      location,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green[50],
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.green[200]!,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  '$itemsCount عنصر متاح',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.green[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // سهم للانتقال
+                        const Icon(
+                          Icons.arrow_forward_ios,
+                          color: Color(0xFF1E88E5),
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// شاشة عرض عناصر مزود خدمة معين
+class ProviderItemsScreen extends StatelessWidget {
+  final String serviceId;
+  final String providerId;
+  final String providerName;
+
+  const ProviderItemsScreen({
+    super.key,
+    required this.serviceId,
+    required this.providerId,
+    required this.providerName,
+  });
+
+  // دالة لعرض نافذة حجز التواريخ
+  void _showDateBookingDialog(
+    BuildContext context,
+    Map<String, dynamic> itemData,
+    String itemId,
+  ) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text(
+            'حجز الأيام',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: Center(
+              child: Text(
+                'وظيفة الحجز غير متوفرة حالياً',
+                style: TextStyle(fontSize: 16),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('close'.tr()),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'عناصر $providerName',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: const Color(0xFF1E88E5),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('services')
+            .doc(serviceId)
+            .collection('items')
+            .where('providerId', isEqualTo: providerId)
+            .where('isActive', isEqualTo: true)
+            .where('isApproved', isEqualTo: true) // فقط العناصر المعتمدة
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
+            );
+          }
+
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return const Center(
+              child: Text(
+                'لا توجد عناصر متاحة',
+                style: TextStyle(fontSize: 18, color: Color(0xFF90A4AE)),
+              ),
+            );
+          }
+
+          final items = snapshot.data!.docs;
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              final data = item.data() as Map<String, dynamic>;
+              final name = data['name'] ?? 'غير محدد';
+              final details = data['details'] ?? '';
+              final price = data['price'] ?? 'غير محدد';
+              final imageUrls = data['imageUrls'] as List<dynamic>? ?? [];
+              final location = data['location'] ?? 'غير محدد';
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () {
+                    // التنقل إلى صفحة تفاصيل العنصر
+                    final itemData = data;
+                    itemData['id'] = item.id;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => Scaffold(
+                          appBar: AppBar(
+                            title: Text(itemData['name'] ?? 'تفاصيل العنصر'),
+                          ),
+                          body: Center(
+                            child: Text(
+                              'تفاصيل العنصر: ${itemData['name'] ?? 'غير محدد'}',
+                              style: TextStyle(fontSize: 18),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // صورة العنصر
+                      if (imageUrls.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(16),
+                          ),
+                          child: Image.network(
+                            imageUrls[0],
+                            height: 200,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                height: 200,
+                                color: Colors.grey[200],
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.broken_image,
+                                    size: 50,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+
+                      // تفاصيل العنصر
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (details.isNotEmpty) ...[
+                              Text(
+                                details,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  size: 16,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    location,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '$price ريال',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF1E88E5),
+                                  ),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    // نظام حجز التواريخ لمزودي الخدمة
+                                    _showDateBookingDialog(
+                                      context,
+                                      data,
+                                      item.id,
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF1E88E5),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  child: const Text('حجز الأيام'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}

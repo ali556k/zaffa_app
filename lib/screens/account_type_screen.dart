@@ -1,0 +1,36 @@
+import 'package:flutter/material.dart';
+import 'phone_password_register_screen.dart';
+import 'phone_password_login_screen.dart';
+
+class AccountTypeScreen extends StatelessWidget {
+  const AccountTypeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('اختيار نوع الحساب')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => PhonePasswordRegisterScreen()));
+              },
+              style: ElevatedButton.styleFrom(minimumSize: Size(200, 50)),
+              child: Text('تسجيل حساب جديد'),
+            ),
+            SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => PhonePasswordLoginScreen()));
+              },
+              style: ElevatedButton.styleFrom(minimumSize: Size(200, 50)),
+              child: Text('login'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

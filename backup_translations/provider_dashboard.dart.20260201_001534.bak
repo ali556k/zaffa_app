@@ -1,0 +1,1005 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'splash_screen.dart';
+
+class ProviderDashboard extends StatefulWidget {
+  const ProviderDashboard({Key? key}) : super(key: key);
+
+  @override
+  State<ProviderDashboard> createState() => _ProviderDashboardState();
+}
+
+class _ProviderDashboardState extends State<ProviderDashboard> {
+  int _selectedIndex = 0;
+  String? _providerId;
+  Map<String, dynamic>? _serviceData;
+  List<Map<String, dynamic>> _items = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProviderData();
+  }
+
+  Future<void> _loadProviderData() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _providerId = prefs.getString('user_phone');
+
+      if (_providerId != null) {
+        // تحميل بيانات الخدمة
+        final serviceDoc = await FirebaseFirestore.instance
+            .collection('provider_services')
+            .doc(_providerId)
+            .get();
+
+        if (serviceDoc.exists) {
+          _serviceData = serviceDoc.data();
+          print('تم تحميل بيانات الخدمة: ${_serviceData?['serviceName']}');
+        } else {
+          print('لا توجد بيانات خدمة لمزود الخدمة: $_providerId');
+        }
+
+        // تحميل العناصر
+        final itemsSnapshot = await FirebaseFirestore.instance
+            .collection('provider_items')
+            .where('providerId', isEqualTo: _providerId)
+            .get();
+
+        _items = itemsSnapshot.docs.map((doc) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          return data;
+        }).toList();
+
+        print('تم تحميل ${_items.length} عنصر');
+      } else {
+        print('لا يوجد رقم هاتف محفوظ');
+        // إذا لم يكن هناك providerId، انتقل لصفحة تسجيل الدخول
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const SplashScreen()),
+          (route) => false,
+        );
+        return;
+      }
+    } catch (e) {
+      print('خطأ في تحميل بيانات المزود: $e');
+      // في حالة الخطأ، اعرض رسالة للمستخدم
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطأ في تحميل البيانات: $e')));
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('provider_dashboard'.tr()),
+        backgroundColor: const Color(0xFF1E88E5),
+        foregroundColor: Colors.white,
+      ),
+      body: RefreshIndicator(
+        onRefresh: _loadProviderData,
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: [
+            _buildHomeScreen(),
+            _buildAccountScreen(),
+            _buildBookingsScreen(),
+            _buildSupportScreen(),
+          ],
+        ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        selectedItemColor: const Color(0xFF1E88E5),
+        unselectedItemColor: Colors.grey,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'الرئيسية'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.account_circle),
+            label: 'الحساب',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.book_online),
+            label: 'الحجوزات',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.support_agent),
+            label: 'الدعم الفني',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeScreen() {
+    if (_isLoading) {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF1E88E5), Color(0xFFF8FAFC)],
+            stops: [0.0, 0.3],
+          ),
+        ),
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Colors.white),
+              SizedBox(height: 16),
+              Text(
+                'جاري تحميل البيانات...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF1E88E5), Color(0xFFF8FAFC)],
+          stops: [0.0, 0.3],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(
+                          Icons.business,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'مرحباً بك',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 16,
+                              ),
+                            ),
+                            Text(
+                              _serviceData?['serviceName'] ?? 'مزود الخدمة',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildStatCard(
+                          'العناصر',
+                          _items.length.toString(),
+                          Icons.inventory,
+                        ),
+                        _buildStatCard(
+                          'النوع',
+                          _serviceData?['serviceType'] ?? '',
+                          Icons.category,
+                        ),
+                        _buildStatCard(
+                          'المنطقة',
+                          _serviceData?['area'] ?? '',
+                          Icons.location_on,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // قائمة العناصر
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.only(top: 16),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'عناصر الخدمة',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: _showAddItemDialog,
+                            icon: const Icon(Icons.add),
+                            label: const Text('add_item'.tr()),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1E88E5),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: _items.isEmpty
+                          ? _buildEmptyState()
+                          : ListView.builder(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+                              itemCount: _items.length,
+                              itemBuilder: (context, index) =>
+                                  _buildItemCard(_items[index], index),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white, size: 24),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          title,
+          style: const TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Icon(
+              Icons.inventory_2_outlined,
+              size: 64,
+              color: Colors.grey[400],
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'لا توجد عناصر بعد',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2D3748),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'ابدأ بإضافة عناصر لخدمتك',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _showAddItemDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('add_first_item'.tr()),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1E88E5),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildItemCard(Map<String, dynamic> item, int index) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () => _showItemDetails(item),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E88E5).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.inventory,
+                      color: Color(0xFF1E88E5),
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item['name'] ?? '',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2D3748),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item['price'] ?? ''} دينار عراقي',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF10B981),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton(
+                    icon: const Icon(Icons.more_vert),
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.edit,
+                              color: Theme.of(
+                                context,
+                              ).appBarTheme.backgroundColor,
+                            ),
+                            SizedBox(width: 8),
+                            Text('edit'.tr()),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('delete'.tr()),
+                          ],
+                        ),
+                      ),
+                    ],
+                    onSelected: (value) {
+                      if (value == 'edit') {
+                        _showEditItemDialog(item, index);
+                      } else if (value == 'delete') {
+                        _deleteItem(item, index);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              if (item['details'] != null && item['details'].isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.description,
+                        size: 20,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          item['details'],
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFF4A5568),
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showItemDetails(Map<String, dynamic> item) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(item['name'] ?? ''),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (item['details'] != null && item['details'].isNotEmpty) ...[
+              const Text(
+                'التفاصيل:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(item['details']),
+              const SizedBox(height: 16),
+            ],
+            const Text('السعر:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(
+              '${item['price']} دينار عراقي',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF10B981),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('close'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddItemDialog() {
+    final nameController = TextEditingController();
+    final detailsController = TextEditingController();
+    final priceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('إضافة عنصر جديد'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'اسم العنصر',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: detailsController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'تفاصيل العنصر',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'السعر (دينار عراقي)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('cancel'.tr()),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.isNotEmpty &&
+                  priceController.text.isNotEmpty) {
+                await _addItem({
+                  'name': nameController.text.trim(),
+                  'details': detailsController.text.trim(),
+                  'price': priceController.text.trim(),
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('add_item'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditItemDialog(Map<String, dynamic> item, int index) {
+    final nameController = TextEditingController(text: item['name']);
+    final detailsController = TextEditingController(text: item['details']);
+    final priceController = TextEditingController(text: item['price']);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('edit_item'.tr()),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'اسم العنصر',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: detailsController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'تفاصيل العنصر',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'السعر (دينار عراقي)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('cancel'.tr()),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.isNotEmpty &&
+                  priceController.text.isNotEmpty) {
+                await _editItem(item['id'], {
+                  'name': nameController.text.trim(),
+                  'details': detailsController.text.trim(),
+                  'price': priceController.text.trim(),
+                }, index);
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('save'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addItem(Map<String, dynamic> itemData) async {
+    try {
+      itemData['providerId'] = _providerId;
+      itemData['serviceId'] = _providerId;
+      itemData['status'] =
+          'pending'; // حالة العنصر: pending في البداية حتى يوافق المالك
+      itemData['createdAt'] = FieldValue.serverTimestamp();
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('provider_items')
+          .add(itemData);
+
+      itemData['id'] = docRef.id;
+
+      setState(() {
+        _items.add(itemData);
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('item_added'.tr())));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('حدث خطأ: $e')));
+    }
+  }
+
+  Future<void> _editItem(
+    String itemId,
+    Map<String, dynamic> itemData,
+    int index,
+  ) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('provider_items')
+          .doc(itemId)
+          .update(itemData);
+
+      setState(() {
+        _items[index] = {..._items[index], ...itemData};
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم تعديل العنصر بنجاح')));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('حدث خطأ: $e')));
+    }
+  }
+
+  void _deleteItem(Map<String, dynamic> item, int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('delete_item'.tr()),
+        content: Text('هل أنت متأكد من حذف "${item['name']}"؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('cancel'.tr()),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              await _performDeleteItem(item['id'], index);
+              Navigator.pop(context);
+            },
+            child: const Text('delete'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performDeleteItem(String itemId, int index) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('provider_items')
+          .doc(itemId)
+          .delete();
+
+      setState(() {
+        _items.removeAt(index);
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('item_deleted'.tr())));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('حدث خطأ: $e')));
+    }
+  }
+
+  Widget _buildAccountScreen() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Header
+          Container(
+            height: 200,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF1E88E5), Color(0xFF1976D2)],
+              ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    const CircleAvatar(
+                      radius: 40,
+                      backgroundColor: Colors.white,
+                      child: Icon(
+                        Icons.person,
+                        size: 40,
+                        color: Color(0xFF1E88E5),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _serviceData?['providerName'] ?? 'مزود الخدمة',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      _serviceData?['providerPhone'] ?? '',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // معلومات الحساب
+          Container(
+            margin: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                _buildInfoTile(
+                  'اسم الخدمة',
+                  _serviceData?['serviceName'] ?? '',
+                  Icons.business,
+                ),
+                _buildInfoTile(
+                  'نوع الخدمة',
+                  _serviceData?['serviceType'] ?? '',
+                  Icons.category,
+                ),
+                _buildInfoTile(
+                  'المنطقة',
+                  _serviceData?['area'] ?? '',
+                  Icons.location_on,
+                ),
+                _buildInfoTile(
+                  'رقم الهاتف',
+                  _serviceData?['providerPhone'] ?? '',
+                  Icons.phone,
+                ),
+                _buildInfoTile(
+                  'عدد العناصر',
+                  _items.length.toString(),
+                  Icons.inventory,
+                ),
+              ],
+            ),
+          ),
+
+          // زر تسجيل الخروج
+          Container(
+            margin: const EdgeInsets.all(24),
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _logout,
+              icon: const Icon(Icons.logout),
+              label: const Text('logout'.tr()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoTile(String title, String value, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, color: const Color(0xFF1E88E5), size: 20),
+          const SizedBox(width: 12),
+          Text(title, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookingsScreen() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.book_online, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'الحجوزات',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2D3748),
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'ستظهر هنا الحجوزات الخاصة بك',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSupportScreen() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.support_agent, size: 64, color: Colors.grey),
+          SizedBox(height: 16),
+          Text(
+            'الدعم الفني',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF2D3748),
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'تواصل معنا للحصول على المساعدة',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _logout() async {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('logout'.tr()),
+        content: const Text('logout_confirm'.tr()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('cancel'.tr()),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const SplashScreen()),
+                (route) => false,
+              );
+            },
+            child: const Text('logout'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+}

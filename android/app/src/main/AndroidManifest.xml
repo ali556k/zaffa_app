@@ -1,8 +1,37 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<<<<<<< HEAD
     <application
         android:label="clean_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+=======
+    <!-- أذونات الموقع -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    
+    <!-- أذونات الإنترنت والتخزين -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    
+    <!-- أذونات الإشعارات -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    
+    <application
+        android:label="زفة"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        
+        <!-- إضافة مفتاح Google Maps API -->
+        <!-- مفتاح API صالح - تم تحديثه -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyAiE1Xk44wm6EiOR_Bum_FyBXgobn3Hpb8"/>
+            
+>>>>>>> a2b6c35 (update before ios build)
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -24,6 +53,35 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+<<<<<<< HEAD
+=======
+            
+            <!-- Deep Links - Custom Scheme (zafa://) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <data android:scheme="zafa" />
+                <data android:host="item" />
+                <data android:host="provider" />
+                <data android:host="booking" />
+                <data android:host="app" />
+            </intent-filter>
+            
+            <!-- App Links - Web URLs (https://zafaapp.com) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                
+                <data android:scheme="https" />
+                <data android:host="zafaapp.com" />
+                <data android:pathPrefix="/item/" />
+                <data android:pathPrefix="/provider/" />
+                <data android:pathPrefix="/booking/" />
+            </intent-filter>
+>>>>>>> a2b6c35 (update before ios build)
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

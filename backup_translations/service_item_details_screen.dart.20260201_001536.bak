@@ -1,0 +1,155 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import '../utils/map_utils.dart';
+
+class ServiceItemDetailsScreen extends StatelessWidget {
+  final String name;
+  final List<String> images;
+  final String details;
+  final String location;
+  final double price;
+
+  const ServiceItemDetailsScreen({
+    super.key,
+    required this.name,
+    required this.images,
+    required this.details,
+    required this.location,
+    required this.price,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        backgroundColor: const Color(0xFF1E88E5),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          Container(
+            margin: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.07),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    height: 260,
+                    child: PageView.builder(
+                      itemCount: images.length,
+                      itemBuilder: (context, index) => Image.network(
+                        images[index],
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            color: const Color(0xFFE3EAF2),
+                            child: const Center(child: CircularProgressIndicator(color: Color(0xFF1E88E5))),
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          color: const Color(0xFFE3EAF2),
+                          child: const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 48)),
+                        ),
+                      ),
+                      onPageChanged: (i) {},
+                    ),
+                  ),
+                  if (images.length > 1)
+                    Positioned(
+                      bottom: 18,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(
+                          images.length,
+                          (index) => Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.7),
+                              border: Border.all(color: const Color(0xFF1E88E5), width: 1.5),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E88E5))),
+                const SizedBox(height: 14),
+                Text('$details\nالمكان: $location', style: const TextStyle(fontSize: 17, color: Color(0xFF607D8B))),
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    const Icon(Icons.monetization_on, color: Color(0xFF43A047), size: 26),
+                    const SizedBox(width: 6),
+                    Text('السعر: ${price.toStringAsFixed(0)} د.ع', style: const TextStyle(fontSize: 20, color: Color(0xFF43A047), fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: ElevatedButton.icon(
+              icon: Icon(Icons.location_on),
+              label: Text('عرض الموقع'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(vertical: 14),
+                minimumSize: Size(double.infinity, 50),
+                textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () {
+                MapUtils.openMap(location);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,575 @@
+import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:bcrypt/bcrypt.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'main_navigation_screen.dart';
+import 'register_screen.dart';
+import 'provider_main_professional.dart';
+import '../services/notification_service.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _phoneController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _clearInvalidSession();
+  }
+
+  // تنظيف أي جلسة غير صحيحة محفوظة
+  Future<void> _clearInvalidSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUserId = prefs.getString('currentUserId');
+
+    if (currentUserId != null) {
+      // التحقق من صحة البيانات المحفوظة
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUserId)
+            .get();
+
+        if (!userDoc.exists) {
+          print('🧹 تنظيف بيانات جلسة غير صحيحة: $currentUserId');
+          await prefs.clear();
+        }
+      } catch (e) {
+        print('🧹 خطأ في التحقق من الجلسة، تنظيف البيانات: $e');
+        await prefs.clear();
+      }
+    }
+  }
+
+  Future<void> _login() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text.trim();
+
+    try {
+      final userRef = FirebaseFirestore.instance.collection('users').doc(phone);
+      final userDoc = await userRef.get();
+      if (!userDoc.exists) {
+        await _logAttempt(phone, false, 'رقم الهاتف غير مسجل');
+        setState(() {
+          _error = 'رقم الهاتف غير مسجل';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final data = userDoc.data()!;
+      final hashedPassword = data['password'];
+      final failedAttempts = data['failedAttempts'] ?? 0;
+      final lastFailedAttempt = data['lastFailedAttempt']?.toDate();
+      final accountType = data['accountType'] ?? 'customer';
+
+      // تحقق من الحظر المؤقت
+      if (failedAttempts >= 5 && lastFailedAttempt != null) {
+        final now = DateTime.now();
+        if (now.difference(lastFailedAttempt).inMinutes < 15) {
+          setState(() {
+            _error =
+                'تم حظر الحساب مؤقتًا بسبب محاولات خاطئة. حاول بعد 15 دقيقة.';
+            _isLoading = false;
+          });
+          return;
+        } else {
+          // إعادة تعيين العد بعد انتهاء الحظر
+          try {
+            await userRef.update({
+              'failedAttempts': 0,
+              'lastFailedAttempt': null,
+            });
+          } catch (e) {
+            print('خطأ في إعادة تعيين محاولات فاشلة: $e');
+          }
+        }
+      }
+
+      if (!BCrypt.checkpw(password, hashedPassword)) {
+        try {
+          await userRef.update({
+            'failedAttempts': failedAttempts + 1,
+            'lastFailedAttempt': FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          print('خطأ في تحديث محاولات فاشلة: $e');
+        }
+        await _logAttempt(phone, false, 'كلمة المرور غير صحيحة');
+        setState(() {
+          _error = 'كلمة المرور غير صحيحة';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // نجاح الدخول: إعادة تعيين العد
+      try {
+        await userRef.update({'failedAttempts': 0, 'lastFailedAttempt': null});
+      } catch (e) {
+        print('خطأ في إعادة تعيين العد: $e');
+      }
+      await _logAttempt(phone, true, 'نجاح الدخول');
+
+      // حفظ الجلسة الجديدة في Firestore مع active=true
+      try {
+        await FirebaseFirestore.instance.collection('sessions').doc(phone).set({
+          'phone': phone,
+          'createdAt': FieldValue.serverTimestamp(),
+          'active': true,
+        });
+        // تحديث آخر دخول في Firestore
+        await userRef.update({'lastSession': FieldValue.serverTimestamp()});
+        print('تم حفظ الجلسة بعد تسجيل الدخول في Firestore فقط: $phone');
+      } catch (e) {
+        print('خطأ في حفظ الجلسة: $e');
+      }
+
+      // حفظ رقم الهاتف ونوع الحساب محليًا
+      final prefs = await SharedPreferences.getInstance();
+
+      // طباعة المفاتيح الموجودة قبل الحفظ
+      print('🔑 المفاتيح قبل الحفظ: ${prefs.getKeys()}');
+
+      await prefs.setString('user_phone', phone);
+      await prefs.setString('account_type', accountType);
+
+      // إجبار حفظ البيانات فوراً
+      await prefs.commit();
+
+      // التحقق من حفظ البيانات فوراً
+      final savedPhone = prefs.getString('user_phone');
+      final savedAccountType = prefs.getString('account_type');
+      print('✅ تم حفظ بيانات تسجيل الدخول محلياً: $phone - $accountType');
+      print('🔍 التحقق من الحفظ: $savedPhone - $savedAccountType');
+      print('🔑 المفاتيح بعد الحفظ: ${prefs.getKeys()}');
+
+      // حفظ توكن الجهاز للإشعارات
+      try {
+        await NotificationService().saveDeviceToken();
+      } catch (e) {
+        print('خطأ في حفظ توكن الجهاز: $e');
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+      if (mounted) {
+        // بعد تسجيل الدخول، انتقل مباشرة للواجهة المناسبة
+        if (accountType == 'provider') {
+          // حفظ بيانات تسجيل الدخول لمزود الخدمة
+          try {
+            // التحقق من وجود بيانات مزود الخدمة وحفظها
+            final providerDoc = await FirebaseFirestore.instance
+                .collection('providers')
+                .doc(phone)
+                .get();
+
+            if (providerDoc.exists) {
+              final providerData = providerDoc.data()!;
+              await _saveProviderLoginState(
+                phone,
+                accountType,
+                providerData['name'] ?? 'مزود الخدمة',
+              );
+
+              // انتقل مباشرة لواجهة مزود الخدمة الاحترافية
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ProviderMainProfessional(),
+                ),
+                (route) => false,
+              );
+            } else {
+              // مزود الخدمة غير موجود في قاعدة البيانات
+              print('❌ مزود الخدمة غير مسجل في النظام');
+              setState(() {
+                _error =
+                    'هذا الرقم غير مسجل كمزود خدمة. يرجى التواصل مع الإدارة.';
+                _isLoading = false;
+              });
+              return;
+            }
+          } catch (e) {
+            print('خطأ في حفظ بيانات مزود الخدمة: $e');
+            // في حالة الخطأ، لا تحفظ بيانات خاطئة
+            setState(() {
+              _error =
+                  'حدث خطأ في التحقق من بيانات مزود الخدمة. يرجى المحاولة مرة أخرى.';
+              _isLoading = false;
+            });
+            return;
+          }
+        } else {
+          _saveLoginState(phone, accountType);
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+            (route) => false,
+          );
+        }
+      }
+    } catch (e) {
+      print('خطأ عام في تسجيل الدخول: $e');
+      setState(() {
+        _error = 'حدث خطأ في تسجيل الدخول. يرجى المحاولة مرة أخرى.';
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _saveLoginState(String userPhone, String accountType) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      'user_phone',
+      userPhone,
+    ); // إضافة هذا للتوافق مع ProviderMainScreen
+    await prefs.setString('account_type', accountType);
+
+    // حفظ الجلسة في Firestore
+    await FirebaseFirestore.instance.collection('sessions').doc(userPhone).set({
+      'active': true,
+      'lastLogin': FieldValue.serverTimestamp(),
+      'accountType': accountType,
+    });
+  }
+
+  // دالة حفظ بيانات مزود الخدمة مع خاصية التذكر
+  Future<void> _saveProviderLoginState(
+    String userPhone,
+    String accountType,
+    String providerName,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // طباعة المفاتيح الموجودة قبل الحفظ
+    print('🔑 المفاتيح قبل حفظ مزود الخدمة: ${prefs.getKeys()}');
+
+    await prefs.setString('user_phone', userPhone);
+    await prefs.setString('account_type', accountType);
+    await prefs.setString('currentUserId', userPhone);
+    await prefs.setString('providerName', providerName);
+
+    // إجبار حفظ البيانات فوراً
+    await prefs.commit();
+
+    // التحقق من حفظ البيانات فوراً
+    final savedPhone = prefs.getString('user_phone');
+    final savedAccountType = prefs.getString('account_type');
+    final savedUserId = prefs.getString('currentUserId');
+
+    // حفظ الجلسة في Firestore
+    await FirebaseFirestore.instance.collection('sessions').doc(userPhone).set({
+      'active': true,
+      'lastLogin': FieldValue.serverTimestamp(),
+      'accountType': accountType,
+    });
+
+    print('✅ تم حفظ بيانات مزود الخدمة والجلسة للتذكر: $providerName');
+    print(
+      '🔍 التحقق من الحفظ: هاتف=$savedPhone، نوع=$savedAccountType، معرف=$savedUserId',
+    );
+    print('🔑 المفاتيح بعد حفظ مزود الخدمة: ${prefs.getKeys()}');
+  }
+
+  // تسجيل محاولات الدخول
+  Future<void> _logAttempt(String phone, bool success, String message) async {
+    try {
+      await FirebaseFirestore.instance.collection('login_attempts').add({
+        'phone': phone,
+        'success': success,
+        'message': message,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('خطأ في تسجيل محاولة الدخول: $e');
+      // تجاهل الخطأ - هذا ليس مهماً للوظيفة الأساسية
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF530405),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // عنوان الترحيب
+                const SizedBox(height: 40),
+                Text(
+                  'app_name'.tr(),
+                  style: const TextStyle(
+                    fontSize: 40,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'welcome_login'.tr(),
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                ),
+                const SizedBox(height: 50),
+
+                // البطاقة البيضاء الرئيسية
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 24),
+                  padding: const EdgeInsets.all(32),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // حقل رقم الهاتف
+                      TextField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        textDirection: ui.TextDirection.ltr,
+                        decoration: InputDecoration(
+                          labelText: 'phone'.tr(),
+                          hintText: '07xxxxxxxx',
+                          hintStyle: TextStyle(color: Colors.grey[400]),
+                          prefixIcon: const Icon(
+                            Icons.phone_outlined,
+                            color: Color(0xFF530405),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF5F7FA),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF530405),
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 18,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // حقل كلمة المرور
+                      TextField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        decoration: InputDecoration(
+                          labelText: 'password'.tr(),
+                          hintText: '••••••••',
+                          hintStyle: TextStyle(color: Colors.grey[400]),
+                          prefixIcon: const Icon(
+                            Icons.lock_outline,
+                            color: Color(0xFF530405),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF5F7FA),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF530405),
+                              width: 2,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 18,
+                          ),
+                        ),
+                      ),
+
+                      // رسالة الخطأ
+                      if (_error != null) ...[
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.red.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                color: Colors.red,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _error!,
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 32),
+
+                      // زر تسجيل الدخول
+                      _isLoading
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: Color(0xFF530405),
+                              ),
+                            )
+                          : SizedBox(
+                              height: 56,
+                              child: ElevatedButton(
+                                onPressed: _login,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF530405),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
+                                child: Text(
+                                  'login'.tr(),
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                      const SizedBox(height: 16),
+
+                      // نسيت كلمة المرور
+                      TextButton(
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => AlertDialog(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              title: const Text('إعادة تعيين كلمة المرور'),
+                              content: const Text(
+                                'يرجى التواصل مع الدعم الفني لاستعادة كلمة المرور.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text(
+                                    'حسنًا',
+                                    style: TextStyle(
+                                      color: Color(0xFF530405),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: Text(
+                          'forgot_password'.tr(),
+                          style: const TextStyle(
+                            color: Color(0xFF530405),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 32),
+
+                // إنشاء حساب جديد
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'no_account'.tr(),
+                      style: const TextStyle(color: Colors.white, fontSize: 15),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => RegisterScreen()),
+                        );
+                      },
+                      child: Text(
+                        'register'.tr(),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          decoration: TextDecoration.underline,
+                          decorationColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 40),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

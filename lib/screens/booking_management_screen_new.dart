@@ -1,0 +1,891 @@
+import 'package:flutter/material.dart';
+import 'package:table_calendar/table_calendar.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'add_booking_dialog.dart';
+import 'edit_booking_dialog.dart';
+import 'customer_booking_calendar.dart';
+
+class BookingManagementScreen extends StatefulWidget {
+  final String providerId;
+  final String itemId;
+  final String itemName;
+
+  const BookingManagementScreen({
+    super.key,
+    required this.providerId,
+    required this.itemId,
+    required this.itemName,
+  });
+
+  @override
+  State<BookingManagementScreen> createState() =>
+      _BookingManagementScreenState();
+}
+
+class _BookingManagementScreenState extends State<BookingManagementScreen>
+    with TickerProviderStateMixin {
+  late CalendarFormat _calendarFormat;
+  late DateTime _focusedDay;
+  late DateTime _selectedDay;
+  List<Map<String, dynamic>> _bookings = [];
+  late AnimationController _fadeAnimationController;
+  late AnimationController _scaleAnimationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _calendarFormat = CalendarFormat.month;
+    _focusedDay = DateTime.now();
+    _selectedDay = DateTime.now();
+
+    // Animation Controllers
+    _fadeAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    _scaleAnimationController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+
+    // Animations
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _fadeAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _scaleAnimationController,
+        curve: Curves.elasticOut,
+      ),
+    );
+
+    _loadBookings();
+    _fadeAnimationController.forward();
+    _scaleAnimationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fadeAnimationController.dispose();
+    _scaleAnimationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF667eea), Color(0xFF764ba2), Color(0xFF6B73FF)],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildAppBar(),
+              Expanded(
+                child: Container(
+                  margin: EdgeInsets.only(top: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(30),
+                      topRight: Radius.circular(30),
+                    ),
+                  ),
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: ScaleTransition(
+                      scale: _scaleAnimation,
+                      child: _buildCalendarView(),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      floatingActionButton: ScaleTransition(
+        scale: _scaleAnimation,
+        child: FloatingActionButton.extended(
+          onPressed: _showAddBookingDialog,
+          backgroundColor: Color(0xFF6B73FF),
+          foregroundColor: Colors.white,
+          icon: Icon(Icons.add_circle_outline, size: 24),
+          label: Text(
+            'حجز جديد',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          elevation: 8,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppBar() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      child: Row(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'إدارة الحجوزات',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  widget.itemName,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // زر عرض تقويم العملاء
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.visibility, color: Colors.white),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CustomerBookingCalendar(
+                      itemId: widget.itemId,
+                      itemName: widget.itemName,
+                      providerId: widget.providerId,
+                      item: {'id': widget.itemId, 'name': widget.itemName},
+                    ),
+                  ),
+                );
+              },
+              tooltip: 'عرض تقويم العملاء',
+            ),
+          ),
+          SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: Icon(Icons.refresh, color: Colors.white),
+              onPressed: _loadBookings,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarView() {
+    return Column(
+      children: [
+        _buildCalendarHeader(),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _buildCalendar(),
+                SizedBox(height: 24),
+                _buildSelectedDayBookings(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCalendarHeader() {
+    return Container(
+      margin: EdgeInsets.all(16),
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Color(0xFF6B73FF).withOpacity(0.1),
+            Color(0xFF667eea).withOpacity(0.1),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Color(0xFF6B73FF).withOpacity(0.2), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Color(0xFF6B73FF),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.calendar_today, color: Colors.white, size: 24),
+          ),
+          SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'التقويم',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF6B73FF),
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'انقر على التاريخ لعرض الحجوزات',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          _buildCalendarFormatButton(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCalendarFormatButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Color(0xFF6B73FF).withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: DropdownButton<CalendarFormat>(
+        value: _calendarFormat,
+        underline: SizedBox(),
+        icon: Icon(Icons.expand_more, color: Color(0xFF6B73FF)),
+        items: [
+          DropdownMenuItem(value: CalendarFormat.month, child: Text('شهر')),
+          DropdownMenuItem(
+            value: CalendarFormat.twoWeeks,
+            child: Text('أسبوعين'),
+          ),
+          DropdownMenuItem(value: CalendarFormat.week, child: Text('أسبوع')),
+        ],
+        onChanged: (format) {
+          if (format != null) {
+            setState(() {
+              _calendarFormat = format;
+            });
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildCalendar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 0,
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: TableCalendar<Map<String, dynamic>>(
+        firstDay: DateTime.utc(2020, 1, 1),
+        lastDay: DateTime.utc(2030, 12, 31),
+        focusedDay: _focusedDay,
+        calendarFormat: _calendarFormat,
+        eventLoader: _getEventsForDay,
+        startingDayOfWeek: StartingDayOfWeek.sunday,
+        availableCalendarFormats: const {
+          CalendarFormat.month: 'شهر',
+          CalendarFormat.twoWeeks: 'أسبوعين',
+          CalendarFormat.week: 'أسبوع',
+        },
+        calendarStyle: CalendarStyle(
+          outsideDaysVisible: false,
+          weekendTextStyle: TextStyle(color: Colors.grey[700]),
+          holidayTextStyle: TextStyle(color: Colors.grey[700]),
+          defaultTextStyle: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+          selectedDecoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF6B73FF), Color(0xFF667eea)],
+            ),
+            shape: BoxShape.circle,
+          ),
+          todayDecoration: BoxDecoration(
+            color: Color(0xFF6B73FF).withOpacity(0.3),
+            shape: BoxShape.circle,
+          ),
+          markerDecoration: BoxDecoration(color: Colors.transparent),
+          markersMaxCount: 0,
+        ),
+        calendarBuilders: CalendarBuilders(
+          defaultBuilder: (context, day, focusedDay) {
+            return _buildDayWithBookingIndicator(day, false, false);
+          },
+          selectedBuilder: (context, day, focusedDay) {
+            return _buildDayWithBookingIndicator(day, true, false);
+          },
+          todayBuilder: (context, day, focusedDay) {
+            return _buildDayWithBookingIndicator(day, false, true);
+          },
+        ),
+        headerStyle: HeaderStyle(
+          formatButtonVisible: false,
+          titleCentered: true,
+          titleTextStyle: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF6B73FF),
+          ),
+          leftChevronIcon: Icon(
+            Icons.chevron_left,
+            color: Color(0xFF6B73FF),
+            size: 28,
+          ),
+          rightChevronIcon: Icon(
+            Icons.chevron_right,
+            color: Color(0xFF6B73FF),
+            size: 28,
+          ),
+        ),
+        onDaySelected: (selectedDay, focusedDay) {
+          setState(() {
+            _selectedDay = selectedDay;
+            _focusedDay = focusedDay;
+          });
+        },
+        onPageChanged: (focusedDay) {
+          _focusedDay = focusedDay;
+        },
+        selectedDayPredicate: (day) {
+          return isSameDay(_selectedDay, day);
+        },
+      ),
+    );
+  }
+
+  Widget _buildDayWithBookingIndicator(
+    DateTime day,
+    bool isSelected,
+    bool isToday,
+  ) {
+    final dayBookings = _getEventsForDay(day);
+    bool hasFullDay = dayBookings.any(
+      (booking) => booking['isFullDay'] == true,
+    );
+    bool hasPartialDay = dayBookings.any(
+      (booking) => booking['isFullDay'] == false,
+    );
+
+    return Stack(
+      children: [
+        Container(
+          margin: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            gradient: isSelected
+                ? LinearGradient(colors: [Color(0xFF6B73FF), Color(0xFF667eea)])
+                : null,
+            color: isToday && !isSelected
+                ? Color(0xFF6B73FF).withOpacity(0.3)
+                : null,
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '${day.day}',
+            style: TextStyle(
+              color: isSelected
+                  ? Colors.white
+                  : isToday
+                  ? Color(0xFF6B73FF)
+                  : Colors.black,
+              fontSize: 16,
+              fontWeight: isSelected || isToday
+                  ? FontWeight.bold
+                  : FontWeight.w500,
+            ),
+          ),
+        ),
+        if (hasFullDay || hasPartialDay)
+          Positioned(
+            right: 4,
+            top: 4,
+            child: SizedBox(
+              width: 12,
+              height: 12,
+              child: hasFullDay
+                  ? Container(
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withOpacity(0.3),
+                            spreadRadius: 1,
+                            blurRadius: 3,
+                          ),
+                        ],
+                      ),
+                    )
+                  : CustomPaint(painter: HalfCirclePainter()),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildSelectedDayBookings() {
+    final selectedDayBookings = _getEventsForDay(_selectedDay);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 0,
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF6B73FF), Color(0xFF667eea)],
+              ),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.event_note, color: Colors.white, size: 24),
+                SizedBox(width: 12),
+                Text(
+                  'حجوزات ${_selectedDay.day}/${_selectedDay.month}/${_selectedDay.year}',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                Spacer(),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${selectedDayBookings.length}',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (selectedDayBookings.isEmpty)
+            Container(
+              padding: EdgeInsets.all(40),
+              child: Column(
+                children: [
+                  Icon(Icons.event_busy, size: 64, color: Colors.grey[400]),
+                  SizedBox(height: 16),
+                  Text(
+                    'لا توجد حجوزات في هذا اليوم',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'انقر على "حجز جديد" لإضافة حجز',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            )
+          else
+            Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                children: selectedDayBookings.map((booking) {
+                  return _buildBookingCard(booking);
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookingCard(Map<String, dynamic> booking) {
+    Color statusColor;
+    IconData statusIcon;
+    String statusText;
+
+    switch (booking['status']) {
+      case 'confirmed':
+        statusColor = Colors.green;
+        statusIcon = Icons.check_circle;
+        statusText = 'مؤكد';
+        break;
+      case 'pending':
+        statusColor = Colors.orange;
+        statusIcon = Icons.schedule;
+        statusText = 'قيد الانتظار';
+        break;
+      case 'cancelled':
+        statusColor = Colors.red;
+        statusIcon = Icons.cancel;
+        statusText = 'ملغي';
+        break;
+      default:
+        statusColor = Colors.grey;
+        statusIcon = Icons.help;
+        statusText = 'غير معروف';
+    }
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: statusColor.withOpacity(0.3), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: statusColor.withOpacity(0.1),
+            spreadRadius: 0,
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.1),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(statusIcon, color: Colors.white, size: 20),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        booking['customerName'] ?? 'غير محدد',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                  onSelected: (value) {
+                    if (value == 'edit') {
+                      _showEditBookingDialog(booking);
+                    } else if (value == 'delete') {
+                      _deleteBooking(booking);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit, color: Colors.blue),
+                          SizedBox(width: 8),
+                          Text('تعديل'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('حذف'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _buildInfoRow(
+                  Icons.phone,
+                  'رقم الهاتف',
+                  booking['customerPhone'] ?? 'غير محدد',
+                ),
+                SizedBox(height: 12),
+                _buildInfoRow(
+                  booking['isFullDay'] ? Icons.today : Icons.access_time,
+                  'نوع الحجز',
+                  booking['isFullDay']
+                      ? 'يوم كامل'
+                      : '${booking['startTime']} - ${booking['endTime']}',
+                ),
+                if (booking['notes'] != null &&
+                    booking['notes'].isNotEmpty) ...[
+                  SizedBox(height: 12),
+                  _buildInfoRow(Icons.note, 'ملاحظات', booking['notes']),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Color(0xFF6B73FF).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(icon, size: 16, color: Color(0xFF6B73FF)),
+        ),
+        SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[800],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Map<String, dynamic>> _getEventsForDay(DateTime day) {
+    return _bookings.where((booking) {
+      final bookingDate = (booking['date'] as Timestamp).toDate();
+      return isSameDay(bookingDate, day);
+    }).toList();
+  }
+
+  Future<void> _loadBookings() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('item_bookings')
+          .where('providerId', isEqualTo: widget.providerId)
+          .where('itemId', isEqualTo: widget.itemId)
+          .orderBy('date')
+          .get();
+
+      setState(() {
+        _bookings = snapshot.docs.map((doc) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          return data;
+        }).toList();
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في تحميل الحجوزات: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showAddBookingDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AddBookingDialog(
+        selectedDay: _selectedDay,
+        item: {
+          'id': widget.itemId,
+          'name': widget.itemName,
+          'providerId': widget.providerId,
+        },
+        onBookingAdded: _loadBookings,
+      ),
+    );
+  }
+
+  void _showEditBookingDialog(Map<String, dynamic> booking) {
+    showDialog(
+      context: context,
+      builder: (context) =>
+          EditBookingDialog(booking: booking, onBookingUpdated: _loadBookings),
+    );
+  }
+
+  Future<void> _deleteBooking(Map<String, dynamic> booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('تأكيد الحذف'),
+        content: Text('هل أنت متأكد من حذف هذا الحجز؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('حذف', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('item_bookings')
+            .doc(booking['id'])
+            .delete();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('تم حذف الحجز بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        _loadBookings();
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في حذف الحجز: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}
+
+// رسام نصف الدائرة للمؤشرات البصرية
+class HalfCirclePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.fill;
+
+    canvas.drawArc(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      0, // زاوية البداية
+      3.14159, // نصف دائرة (π راديان)
+      false,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
+}

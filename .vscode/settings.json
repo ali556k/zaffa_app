@@ -1,2 +1,7 @@
+<<<<<<< HEAD
 {
+=======
+{ 
+    "github.copilot.chat.extensionUnification.enabled": false
+>>>>>>> a2b6c35 (update before ios build)
 }

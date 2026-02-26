@@ -1,0 +1,8 @@
+Place Inter font files here:
+- Inter-Regular.ttf (weight 400)
+- Inter-Medium.ttf (weight 500)
+- Inter-SemiBold.ttf (weight 600)
+- Inter-Bold.ttf (weight 700)
+
+Note: We currently load Inter via google_fonts for Android automatically.
+If you prefer local assets, add these files and switch Theme to use asset fonts.

@@ -1,0 +1,377 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+/// شاشة إصلاح بيانات الحجوزات المتضاربة
+class BookingDataFixerScreen extends StatefulWidget {
+  const BookingDataFixerScreen({super.key});
+
+  @override
+  State<BookingDataFixerScreen> createState() => _BookingDataFixerScreenState();
+}
+
+class _BookingDataFixerScreenState extends State<BookingDataFixerScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  bool isLoading = false;
+  String statusMessage = '';
+  Map<String, int> itemBookingCounts = {};
+  Map<int, int> weekdayCounts = {};
+  List<Map<String, dynamic>> suspiciousBookings = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _analyzeBookingData();
+  }
+
+  Future<void> _analyzeBookingData() async {
+    setState(() {
+      isLoading = true;
+      statusMessage = 'جاري تحليل بيانات الحجوزات...';
+    });
+
+    try {
+      final bookingsSnapshot = await _firestore.collection('bookings').get();
+      
+      Map<String, int> itemCounts = {};
+      Map<int, int> weekCounts = {};
+      List<Map<String, dynamic>> suspicious = [];
+      
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final itemId = data['itemId'] as String?;
+        final bookingDate = data['bookingDate'] as Timestamp?;
+        
+        // تحليل العناصر
+        if (itemId != null) {
+          itemCounts[itemId] = (itemCounts[itemId] ?? 0) + 1;
+        } else {
+          suspicious.add({
+            'id': doc.id,
+            'reason': 'بدون itemId',
+            'data': data,
+          });
+        }
+        
+        // تحليل الأيام
+        if (bookingDate != null) {
+          final date = bookingDate.toDate();
+          final weekday = date.weekday;
+          weekCounts[weekday] = (weekCounts[weekday] ?? 0) + 1;
+          
+          // العثور على حجوزات مشبوهة في نهاية الأسبوع
+          if (weekday == 6 || weekday == 7) {
+            suspicious.add({
+              'id': doc.id,
+              'reason': 'حجز في نهاية الأسبوع',
+              'data': data,
+              'date': date,
+            });
+          }
+        }
+      }
+
+      setState(() {
+        itemBookingCounts = itemCounts;
+        weekdayCounts = weekCounts;
+        suspiciousBookings = suspicious;
+        statusMessage = 'تم العثور على ${bookingsSnapshot.docs.length} حجز، منها ${suspicious.length} حجز مشبوه';
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        statusMessage = 'خطأ في التحليل: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _deleteAllBookings() async {
+    final confirmed = await _showConfirmDialog(
+      'حذف جميع الحجوزات',
+      'هل أنت متأكد من حذف جميع الحجوزات؟ هذا الإجراء لا يمكن التراجع عنه.',
+    );
+    
+    if (!confirmed) return;
+
+    setState(() {
+      isLoading = true;
+      statusMessage = 'جاري حذف جميع الحجوزات...';
+    });
+
+    try {
+      final bookingsSnapshot = await _firestore.collection('bookings').get();
+      final batch = _firestore.batch();
+
+      for (var doc in bookingsSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+      
+      setState(() {
+        statusMessage = 'تم حذف جميع الحجوزات بنجاح!';
+        itemBookingCounts = {};
+        weekdayCounts = {};
+        suspiciousBookings = [];
+        isLoading = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم حذف جميع الحجوزات بنجاح'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        statusMessage = 'خطأ في الحذف: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _deleteSuspiciousBookings() async {
+    if (suspiciousBookings.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا توجد حجوزات مشبوهة للحذف')),
+      );
+      return;
+    }
+
+    final confirmed = await _showConfirmDialog(
+      'حذف الحجوزات المشبوهة',
+      'هل تريد حذف ${suspiciousBookings.length} حجز مشبوه؟',
+    );
+    
+    if (!confirmed) return;
+
+    setState(() {
+      isLoading = true;
+      statusMessage = 'جاري حذف الحجوزات المشبوهة...';
+    });
+
+    try {
+      final batch = _firestore.batch();
+
+      for (var booking in suspiciousBookings) {
+        final docRef = _firestore.collection('bookings').doc(booking['id']);
+        batch.delete(docRef);
+      }
+
+      await batch.commit();
+      
+      await _analyzeBookingData(); // إعادة تحليل البيانات
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم حذف الحجوزات المشبوهة بنجاح'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        statusMessage = 'خطأ في الحذف: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  Future<bool> _showConfirmDialog(String title, String content) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('cancel'.tr()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('confirm'.tr()),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const weekdayNames = {
+      1: 'الاثنين', 2: 'الثلاثاء', 3: 'الأربعاء', 4: 'الخميس',
+      5: 'الجمعة', 6: 'السبت', 7: 'الأحد'
+    };
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('إصلاح بيانات الحجوزات'),
+        backgroundColor: Colors.red.shade700,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // حالة التحليل
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'حالة التحليل',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    if (isLoading)
+                      const Row(
+                        children: [
+                          CircularProgressIndicator(strokeWidth: 2),
+                          SizedBox(width: 16),
+                          Text('جاري المعالجة...'),
+                        ],
+                      )
+                    else
+                      Text(statusMessage),
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // أزرار الإجراءات
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: isLoading ? null : _analyzeBookingData,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('إعادة تحليل'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: isLoading ? null : _deleteSuspiciousBookings,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('حذف المشبوه'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: isLoading ? null : _deleteAllBookings,
+                    icon: const Icon(Icons.delete_forever),
+                    label: const Text('حذف الكل'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 16),
+            
+            // إحصائيات
+            Expanded(
+              child: Row(
+                children: [
+                  // توزيع العناصر
+                  Expanded(
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'الحجوزات حسب العنصر',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const Divider(),
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: itemBookingCounts.length,
+                                itemBuilder: (context, index) {
+                                  final entry = itemBookingCounts.entries.elementAt(index);
+                                  return ListTile(
+                                    title: Text('العنصر: ${entry.key}'),
+                                    trailing: Text(
+                                      '${entry.value} حجز',
+                                      style: TextStyle(
+                                        color: entry.value > 10 ? Colors.red : Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 8),
+                  
+                  // توزيع الأيام
+                  Expanded(
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'الحجوزات حسب اليوم',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const Divider(),
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: weekdayCounts.length,
+                                itemBuilder: (context, index) {
+                                  final entry = weekdayCounts.entries.elementAt(index);
+                                  final dayName = weekdayNames[entry.key] ?? 'غير محدد';
+                                  final isWeekend = entry.key == 6 || entry.key == 7;
+                                  
+                                  return ListTile(
+                                    title: Text(dayName),
+                                    trailing: Text(
+                                      '${entry.value} حجز',
+                                      style: TextStyle(
+                                        color: isWeekend && entry.value > 5 ? Colors.red : Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

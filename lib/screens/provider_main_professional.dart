@@ -1,0 +1,4097 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'splash_screen.dart';
+
+import 'provider_items_registration_screen.dart';
+import 'item_edit_screen.dart';
+import 'booking_management_screen.dart';
+import '../utils/chat_helper.dart';
+import 'hall_management_screen.dart';
+import 'photography_management_screen.dart';
+import 'dart:async';
+import 'chats_list_screen.dart';
+import 'customer_support_screen.dart';
+import 'provider_statistics_screen.dart';
+import '../services/notification_service.dart';
+
+class ProviderMainProfessional extends StatefulWidget {
+  const ProviderMainProfessional({super.key});
+
+  @override
+  State<ProviderMainProfessional> createState() =>
+      _ProviderMainProfessionalState();
+}
+
+class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
+    with TickerProviderStateMixin {
+  int _selectedIndex = 0;
+  String? _providerId;
+  Map<String, dynamic>? _serviceData;
+  Map<String, dynamic>? _providerData;
+  List<Map<String, dynamic>> _items = [];
+  List<Map<String, dynamic>> _bookings = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+  late Timer _refreshTimer;
+  late AnimationController _animationController;
+
+  // إحصائيات احترافية
+  int _totalBookings = 0;
+  int _activeItems = 0;
+  double _totalRevenue = 0;
+  double _monthlyRevenue = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasError = false; // إعادة تعيين حالة الخطأ
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    );
+
+    _loadProviderData();
+    _saveFCMToken(); // حفظ FCM Token عند فتح الشاشة
+    _animationController.forward();
+
+    // تحديث الإحصائيات كل 30 ثانية
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) {
+        _loadProviderData();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer.cancel();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  // دالة لحفظ بيانات مزود الخدمة في SharedPreferences
+  Future<void> _saveProviderLoginData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('currentUserId', _providerId ?? '');
+      await prefs.setString('providerName', _providerData?['name'] ?? '');
+      await prefs.setString('user_phone', _providerData?['phone'] ?? '');
+      await prefs.setString('account_type', 'provider');
+
+      print('✅ تم حفظ بيانات مزود الخدمة: ${_providerData?['name']}');
+
+      // حفظ الجلسة في Firestore أيضاً
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(_providerId)
+          .set({
+            'userId': _providerId,
+            'accountType': 'provider',
+            'isActive': true,
+            'lastLogin': FieldValue.serverTimestamp(),
+            'name': _providerData?['name'],
+            'phone': _providerData?['phone'],
+          });
+
+      print('✅ تم حفظ جلسة مزود الخدمة بمعرف: $_providerId');
+    } catch (e) {
+      print('خطأ في حفظ بيانات التسجيل: $e');
+    }
+  }
+
+  // حفظ FCM Token للمزود
+  Future<void> _saveFCMToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final providerId = prefs.getString('currentUserId');
+
+      if (providerId != null && providerId.isNotEmpty) {
+        // حفظ التوكن في providers collection
+        await NotificationService().saveProviderToken(providerId);
+        print('✅ تم حفظ FCM Token للمزود: $providerId');
+      }
+    } catch (e) {
+      print('⚠️ خطأ في حفظ FCM Token للمزود: $e');
+    }
+  }
+
+  Future<void> _loadProviderData() async {
+    // منع إعادة التحميل إذا كان هناك خطأ
+    if (_hasError) {
+      print('⚠️ تم منع إعادة التحميل بسبب خطأ سابق');
+      return;
+    }
+
+    try {
+      print('🔄 بدء تحميل بيانات مزود الخدمة...');
+      final prefs = await SharedPreferences.getInstance();
+      _providerId = prefs.getString('currentUserId');
+
+      if (_providerId == null || _providerId!.isEmpty) {
+        print('❌ معرف مزود الخدمة غير موجود، العودة للشاشة الرئيسية');
+        _hasError = true;
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const SplashScreen()),
+            (route) => false,
+          );
+        }
+        return;
+      }
+
+      print('📱 معرف مزود الخدمة: $_providerId');
+
+      // التحقق من نوع المزود في SharedPreferences
+      bool isHallFromPrefs = prefs.getBool('is_hall_provider') ?? false;
+      String providerType = prefs.getString('provider_type') ?? '';
+
+      print('📋 نوع المزود من SharedPreferences: $providerType');
+      print('🏰 هل هو مزود قاعة؟ $isHallFromPrefs');
+
+      // تحميل بيانات مزود الخدمة من providers
+      final providerDoc = await FirebaseFirestore.instance
+          .collection('providers')
+          .doc(_providerId)
+          .get();
+
+      if (providerDoc.exists) {
+        _providerData = providerDoc.data();
+        print(
+          '👤 تم تحميل بيانات مزود الخدمة من providers: ${_providerData?['name']}',
+        );
+        print('📋 بيانات providers الكاملة: $_providerData');
+
+        // تحميل معلومات إضافية من users collection
+        print('🔍 البحث عن معرف المزود في users: $_providerId');
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_providerId)
+            .get();
+
+        if (userDoc.exists) {
+          final userData = userDoc.data()!;
+          print('📄 بيانات users موجودة: $userData');
+          // إضافة المحافظة والمنطقة ورقم بطاقة الائتمان من users
+          _providerData!['governorate'] =
+              userData['governorate'] ??
+              userData['province'] ??
+              _providerData!['governorate'];
+          _providerData!['area'] = userData['area'] ?? _providerData!['area'];
+          _providerData!['creditCard'] =
+              userData['creditCard'] ?? _providerData!['creditCard'];
+          print(
+            '✅ تم إضافة بيانات users: المحافظة=${_providerData!['governorate']}, المنطقة=${_providerData!['area']}, بطاقة=${_providerData!['creditCard']}',
+          );
+        } else {
+          print('⚠️ لم يتم العثور على بيانات في users للمعرف: $_providerId');
+          print('🔄 محاولة البحث في users برقم الهاتف...');
+
+          // محاولة البحث برقم الهاتف
+          final userQuery = await FirebaseFirestore.instance
+              .collection('users')
+              .where('phone', isEqualTo: _providerId)
+              .limit(1)
+              .get();
+
+          if (userQuery.docs.isNotEmpty) {
+            final userData = userQuery.docs.first.data();
+            print('✅ تم العثور على بيانات users عبر البحث: $userData');
+            _providerData!['governorate'] =
+                userData['governorate'] ??
+                userData['province'] ??
+                _providerData!['governorate'];
+            _providerData!['area'] = userData['area'] ?? _providerData!['area'];
+            _providerData!['creditCard'] =
+                userData['creditCard'] ?? _providerData!['creditCard'];
+          } else {
+            print('❌ لم يتم العثور على بيانات المستخدم في users');
+          }
+        }
+
+        // تحميل بيانات الخدمة - الأولوية للبحث في published_providers و provider_requests
+        print('🔍 البحث عن بيانات الخدمة للمزود: $_providerId');
+
+        // 1. البحث في published_providers (للخدمات المعتمدة)
+        var serviceDoc = await FirebaseFirestore.instance
+            .collection('published_providers')
+            .doc(_providerId)
+            .get();
+
+        // 2. إذا لم يكن موجوداً، ابحث في provider_requests (للطلبات قيد المراجعة)
+        if (!serviceDoc.exists) {
+          print(
+            '🔍 لم يتم العثور في published_providers، البحث في provider_requests...',
+          );
+          serviceDoc = await FirebaseFirestore.instance
+              .collection('provider_requests')
+              .doc(_providerId)
+              .get();
+        }
+
+        // 3. إذا لم يكن موجوداً، ابحث في provider_services
+        if (!serviceDoc.exists) {
+          print(
+            '🔍 لم يتم العثور في provider_requests، البحث في provider_services...',
+          );
+          serviceDoc = await FirebaseFirestore.instance
+              .collection('provider_services')
+              .doc(_providerId)
+              .get();
+        }
+
+        if (serviceDoc.exists) {
+          _serviceData = serviceDoc.data();
+          print('✅ تم تحميل بيانات الخدمة من: ${serviceDoc.reference.path}');
+          print('📋 بيانات الخدمة الكاملة: $_serviceData');
+          print('   - serviceName: ${_serviceData!['serviceName']}');
+          print('   - providerName: ${_serviceData!['providerName']}');
+          print('   - pricePerHour: ${_serviceData!['pricePerHour']}');
+          print('   - price: ${_serviceData!['price']}');
+          print('   - cameraType: ${_serviceData!['cameraType']}');
+          print('   - category: ${_serviceData!['category']}');
+          print('   - serviceType: ${_serviceData!['serviceType']}');
+
+          // محاولة جلب المحافظة والمنطقة ورقم بطاقة الائتمان من _serviceData أيضاً
+          if (_serviceData!['governorate'] != null &&
+              (_providerData!['governorate'] == null ||
+                  _providerData!['governorate'] == 'غير محدد')) {
+            _providerData!['governorate'] = _serviceData!['governorate'];
+            print(
+              '✅ تم جلب المحافظة من service data: ${_serviceData!['governorate']}',
+            );
+          }
+          if (_serviceData!['area'] != null &&
+              (_providerData!['area'] == null ||
+                  _providerData!['area'] == 'غير محدد')) {
+            _providerData!['area'] = _serviceData!['area'];
+            print('✅ تم جلب المنطقة من service data: ${_serviceData!['area']}');
+          }
+          if (_serviceData!['category'] != null) {
+            _providerData!['category'] = _serviceData!['category'];
+            print(
+              '✅ تم نسخ category إلى _providerData: ${_serviceData!['category']}',
+            );
+          }
+          if (_serviceData!['serviceType'] != null) {
+            _providerData!['serviceType'] = _serviceData!['serviceType'];
+            print(
+              '✅ تم نسخ serviceType إلى _providerData: ${_serviceData!['serviceType']}',
+            );
+          }
+
+          // خريطة تحويل الأنواع الإنجليزية إلى العربية
+          Map<String, String> serviceTypeMapping = {
+            'hall': 'قاعات اعراس',
+            'restaurant': 'مطاعم',
+            'hotel': 'فنادق',
+            'car_rental': 'تأجير سيارات',
+            'flowers': 'ورود',
+            'cake': 'كيك',
+            'photography': 'تصوير',
+            'salon': 'صالونات تجميل',
+            'honeymoon': 'شهر عسل',
+            'wedding_dress': 'فساتين زفاف',
+            'suit': 'بدلات رجالية',
+            'general': 'خدمات عامة',
+          };
+
+          // تحويل serviceType إلى العربية إذا كان بالإنجليزية
+          if (_serviceData!['serviceType'] != null) {
+            String originalServiceType = _serviceData!['serviceType'];
+            String convertedServiceType =
+                serviceTypeMapping[originalServiceType] ?? originalServiceType;
+
+            if (originalServiceType != convertedServiceType) {
+              _serviceData!['serviceType'] = convertedServiceType;
+              print(
+                '🔄 تم تحويل نوع الخدمة من $originalServiceType إلى $convertedServiceType',
+              );
+            }
+          }
+
+          print('🏢 تم تحميل بيانات الخدمة: ${_serviceData?['serviceName']}');
+          print('🔍 نوع الخدمة النهائي: ${_serviceData?['serviceType']}');
+        } else {
+          // محاولة الحصول على بيانات الخدمة من مجموعة providers
+          // تحديد نوع الخدمة والاسم الافتراضي
+          String actualServiceType = 'خدمات عامة'; // قيمة افتراضية محايدة
+          String actualServiceName = 'خدمة غير محددة'; // اسم افتراضي محايد
+
+          // خريطة تحويل الأنواع الإنجليزية إلى العربية
+          Map<String, String> serviceTypeMapping = {
+            'hall': 'قاعات اعراس',
+            'قاعة عرس': 'قاعات اعراس',
+            'restaurant': 'مطاعم',
+            'hotel': 'فنادق',
+            'car_rental': 'تأجير سيارات',
+            'flowers': 'ورود',
+            'cake': 'كيك',
+            'photography': 'تصوير',
+            'salon': 'صالونات تجميل',
+            'honeymoon': 'شهر عسل',
+            'wedding_dress': 'فساتين زفاف',
+            'suit': 'بدلات رجالية',
+            'general': 'خدمات عامة',
+          };
+
+          if (_providerData != null && _providerData!['serviceType'] != null) {
+            String originalServiceType = _providerData!['serviceType'];
+            // تحويل من الإنجليزية إلى العربية إذا لزم الأمر
+            actualServiceType =
+                serviceTypeMapping[originalServiceType] ?? originalServiceType;
+            actualServiceName =
+                _providerData!['serviceName'] ?? actualServiceType;
+            print('🔍 نوع الخدمة الأصلي: $originalServiceType');
+            print('🔍 نوع الخدمة المحول: $actualServiceType');
+            print('🔍 اسم الخدمة من بيانات المزود: $actualServiceName');
+          } else {
+            print(
+              '⚠️ تحذير: لم يتم العثور على نوع خدمة محدد، سيتم استخدام القيمة الافتراضية: $actualServiceType',
+            );
+            print('⚠️ بيانات المزود الكاملة: $_providerData');
+          }
+
+          // إنشاء بيانات افتراضية لمزود خدمة جديد
+          _serviceData = {
+            'providerId': _providerId,
+            'providerName': _providerData?['name'] ?? 'مزود الخدمة',
+            'providerPhone': _providerId, // استخدام رقم الهاتف كمعرف
+            'serviceType': actualServiceType,
+            'serviceName': actualServiceName,
+            'area': _providerData?['area'] ?? 'غير محدد',
+          };
+          print(
+            '📝 تم إنشاء بيانات افتراضية لمزود خدمة جديد بنوع: $actualServiceType',
+          );
+
+          // حفظ البيانات الافتراضية في قاعدة البيانات
+          try {
+            await FirebaseFirestore.instance
+                .collection('provider_services')
+                .doc(_providerId)
+                .set(_serviceData!);
+            print('✅ تم حفظ بيانات الخدمة الافتراضية');
+          } catch (e) {
+            print('❌ خطأ في حفظ بيانات الخدمة: $e');
+          }
+        }
+
+        // حفظ بيانات التسجيل
+        await _saveProviderLoginData();
+
+        // تحديث _serviceData بالبيانات الحقيقية إذا لم تكن موجودة
+        if (_serviceData == null || _serviceData!.isEmpty) {
+          print('🔄 تحديث _serviceData بالبيانات الحقيقية...');
+          _serviceData = {
+            'providerId': _providerId,
+            'providerName': _providerData?['name'] ?? 'مزود الخدمة',
+            'providerPhone': _providerId,
+            'serviceType': _providerData?['serviceType'] ?? 'خدمات عامة',
+            'serviceName':
+                _providerData?['serviceName'] ??
+                _providerData?['name'] ??
+                'خدمة عامة',
+            'area': _providerData?['area'] ?? 'غير محدد',
+          };
+          print('✅ _serviceData المحدثة: $_serviceData');
+        }
+
+        // تحميل العناصر من provider_items (العناصر المعتمدة)
+        final providerItemsSnapshot = await FirebaseFirestore.instance
+            .collection('provider_items')
+            .where('providerId', isEqualTo: _providerId)
+            .get();
+
+        print(
+          '🔍 البحث في provider_items بـ providerId: $_providerId - وجد ${providerItemsSnapshot.docs.length} عنصر',
+        );
+
+        List<Map<String, dynamic>> allItems = [];
+
+        for (var doc in providerItemsSnapshot.docs) {
+          final data = doc.data();
+          data['id'] = doc.id;
+
+          // تطبيع حالة العنصر: إذا كان معتمد من المالك اعتبره نشطاً
+          data['status'] = _normalizeItemStatus(data);
+          allItems.add(data);
+          print(
+            '➕ عنصر: ${data['name'] ?? 'بدون اسم'} - الحالة: ${data['status']}',
+          );
+        }
+
+        // إذا لم يتم العثور على عناصر في provider_items، تحقق من published_items
+        if (allItems.isEmpty) {
+          print(
+            '🔍 لا توجد عناصر في provider_items، البحث في published_items...',
+          );
+
+          final publishedItemsSnapshot = await FirebaseFirestore.instance
+              .collection('published_items')
+              .where('providerId', isEqualTo: _providerId)
+              .get();
+
+          print(
+            '🔍 البحث في published_items بـ providerId: $_providerId - وجد ${publishedItemsSnapshot.docs.length} عنصر',
+          );
+
+          for (var doc in publishedItemsSnapshot.docs) {
+            final data = doc.data();
+            data['id'] = doc.id;
+            // العناصر المنشورة تعتبر نشطة
+            data['status'] = 'active';
+            allItems.add(data);
+            print('➕ عنصر منشور: ${data['name'] ?? 'بدون اسم'}');
+          }
+        }
+
+        // تحميل الحجوزات
+        final bookingsSnapshot = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('providerId', isEqualTo: _providerId)
+            .get();
+
+        List<Map<String, dynamic>> allBookings = [];
+        for (var doc in bookingsSnapshot.docs) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          allBookings.add(data);
+        }
+
+        // إغناء الحجوزات باسم ورقم وموقع الزبون إن كانت ناقصة
+        allBookings = await _enrichBookingsCustomerData(allBookings);
+
+        // محاولة إصلاح العناصر الموجودة في قاعدة البيانات: تعيين الحالة "active" إذا كانت الموافقة موجودة
+        await _backfillItemStatuses(allItems);
+
+        if (mounted) {
+          setState(() {
+            _items = allItems;
+            _bookings = allBookings;
+            _isLoading = false;
+          });
+
+          print('🔍 تم تحميل ${_items.length} عنصر لمزود الخدمة $_providerId');
+          print('📊 البيانات النهائية لمزود الخدمة:');
+          print('   - الاسم: ${_providerData?['name']}');
+          print('   - المحافظة: ${_providerData?['governorate']}');
+          print('   - المنطقة: ${_providerData?['area']}');
+          print('   - بطاقة الائتمان: ${_providerData?['creditCard']}');
+
+          // تحديث الإحصائيات
+          _updateProfessionalStatistics();
+        }
+      } else {
+        print('❌ مزود الخدمة غير موجود في قاعدة البيانات');
+        // حذف البيانات المحفوظة الخاطئة
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+
+        // حذف الجلسة من Firestore
+        try {
+          await FirebaseFirestore.instance
+              .collection('sessions')
+              .doc(_providerId)
+              .delete();
+        } catch (e) {
+          print('خطأ في حذف الجلسة: $e');
+        }
+
+        _hasError = true;
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const SplashScreen()),
+            (route) => false,
+          );
+        }
+        return;
+      }
+    } catch (e) {
+      print('خطأ في تحميل بيانات المزود: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // إرجاع الحالة الصحيحة للعنصر بناءً على بيانات الموافقة (يشمل الحقول البديلة)
+  String _normalizeItemStatus(Map<String, dynamic> item) {
+    // مؤشرات الموافقة المحتملة عبر نماذج مختلفة
+    final approvedBy =
+        item['approvedBy'] ?? item['ownerApprovedBy'] ?? item['approved_by'];
+    final approvedAt =
+        item['approvedAt'] ?? item['ownerApprovedAt'] ?? item['approved_at'];
+    final isApproved =
+        (item['approved'] == true) ||
+        (item['isApproved'] == true) ||
+        (item['approvedByOwner'] == true) ||
+        (item['ownerApproved'] == true);
+    final isPublished =
+        (item['published'] == true) ||
+        (item['isPublished'] == true) ||
+        (item['status'] == 'published');
+
+    if (approvedBy != null && approvedAt != null) return 'active';
+    if (isApproved || isPublished) return 'active';
+
+    final status = item['status']?.toString().toLowerCase();
+    if (status == 'active' || status == 'pending' || status == 'rejected') {
+      return status!;
+    }
+    // افتراضي: إذا لم تُحدَّد الحالة، اعتبرها pending
+    return 'pending';
+  }
+
+  // تحديث الحالة في Firestore للعناصر الحالية لتصبح "active" عندما تكون الموافقة موجودة
+  Future<void> _backfillItemStatuses(List<Map<String, dynamic>> items) async {
+    try {
+      int updatedCount = 0;
+
+      print('🔄 بدء تزامن حالات العناصر...');
+
+      for (final item in items) {
+        final id = item['id']?.toString();
+        if (id == null || id.isEmpty) continue;
+
+        final currentStatus =
+            item['status']?.toString().toLowerCase() ?? 'pending';
+
+        // إذا كانت الحالة بالفعل active أو rejected، لا داعي للتحديث
+        if (currentStatus == 'active' || currentStatus == 'rejected') {
+          continue;
+        }
+
+        // البحث في المجموعات الأصلية لمعرفة الحالة الحقيقية
+        final itemName = item['name']?.toString();
+        if (itemName == null || itemName.isEmpty) continue;
+
+        // تحديد المجموعات المحتملة للبحث فيها
+        List<String> collectionsToSearch = [
+          'hall',
+          'hotel',
+          'cake',
+          'restaurant',
+          'car',
+          'flowers',
+          'photography',
+          'salon_care',
+          'honeymoon',
+          'bride_dress',
+          'groom_suit',
+          'car_decoration',
+        ];
+
+        bool foundActive = false;
+        // ignore: unused_local_variable
+        String? foundInCollection;
+
+        // البحث في جميع المجموعات
+        for (String collection in collectionsToSearch) {
+          try {
+            final query = await FirebaseFirestore.instance
+                .collection(collection)
+                .where('providerId', isEqualTo: _providerId)
+                .where('name', isEqualTo: itemName)
+                .limit(1)
+                .get();
+
+            if (query.docs.isNotEmpty) {
+              final originalStatus = query.docs.first
+                  .data()['status']
+                  ?.toString()
+                  .toLowerCase();
+              print('✅ وجد "$itemName" في $collection بحالة: $originalStatus');
+
+              // تحقق من الحالات: active, approved, أو أي علامة موافقة
+              if (originalStatus == 'active' ||
+                  originalStatus == 'approved' ||
+                  query.docs.first.data()['approvedBy'] != null ||
+                  query.docs.first.data()['approvedAt'] != null) {
+                foundActive = true;
+                foundInCollection = collection;
+                print('✅ العنصر معتمد في $collection');
+                break;
+              }
+            }
+          } catch (e) {
+            // تجاهل الأخطاء في المجموعات غير الموجودة
+          }
+        }
+
+        // إذا وجدنا العنصر بحالة active في المجموعة الأصلية، نحدث provider_items
+        if (foundActive) {
+          try {
+            await FirebaseFirestore.instance
+                .collection('provider_items')
+                .doc(id)
+                .update({
+                  'status': 'active',
+                  'approvedAt': FieldValue.serverTimestamp(),
+                  'approvedBy': 'admin',
+                });
+
+            updatedCount++;
+            print('✅ تم تحديث "$itemName" من pending إلى active');
+
+            // تحديث في الذاكرة أيضاً
+            item['status'] = 'active';
+          } catch (e) {
+            print('⚠️ خطأ في تحديث "$itemName": $e');
+          }
+        }
+      }
+
+      if (updatedCount > 0) {
+        print('✅ تم تحديث حالة $updatedCount عنصر بنجاح');
+        // إعادة تحميل البيانات لعرض التحديثات
+        if (mounted) {
+          setState(() {
+            // تحديث الحالة في القائمة الحالية
+          });
+        }
+      } else {
+        print('ℹ️ لا توجد عناصر تحتاج إلى تحديث');
+      }
+    } catch (e) {
+      debugPrint('⚠️ فشل تحديث حالات العناصر: $e');
+    }
+  }
+
+  // إكمال بيانات الزبائن للحجوزات مرة واحدة بعد الجلب لتظهر الأسماء في البطاقات
+  Future<List<Map<String, dynamic>>> _enrichBookingsCustomerData(
+    List<Map<String, dynamic>> bookings,
+  ) async {
+    try {
+      List<Map<String, dynamic>> updated = [];
+      for (final b in bookings) {
+        final hasName = (b['customerName'] ?? '').toString().isNotEmpty;
+        final hasPhone = (b['customerPhone'] ?? '').toString().isNotEmpty;
+        final hasGov = (b['customerGovernorate'] ?? '').toString().isNotEmpty;
+        final hasArea = (b['customerArea'] ?? '').toString().isNotEmpty;
+        if (hasName && hasPhone && hasGov && hasArea) {
+          updated.add(b);
+          continue;
+        }
+
+        final cid = (b['customerId'] ?? b['customerPhone'])?.toString();
+        Map<String, dynamic>? data;
+        if (cid != null && cid.isNotEmpty) {
+          final usersDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(cid)
+              .get();
+          data = usersDoc.data();
+          if (data == null) {
+            final q = await FirebaseFirestore.instance
+                .collection('users')
+                .where('phone', isEqualTo: cid)
+                .limit(1)
+                .get();
+            if (q.docs.isNotEmpty) data = q.docs.first.data();
+          }
+          if (data == null) {
+            final customersDoc = await FirebaseFirestore.instance
+                .collection('customers')
+                .doc(cid)
+                .get();
+            data = customersDoc.data();
+          }
+        }
+
+        if (data != null) {
+          b['customerName'] =
+              b['customerName'] ?? data['name'] ?? b['customerName'];
+          b['customerPhone'] =
+              b['customerPhone'] ?? data['phone'] ?? b['customerPhone'];
+          b['customerGovernorate'] =
+              b['customerGovernorate'] ??
+              data['governorate'] ??
+              data['city'] ??
+              b['customerGovernorate'];
+          b['customerArea'] =
+              b['customerArea'] ?? data['area'] ?? b['customerArea'];
+        }
+
+        updated.add(b);
+      }
+      return updated;
+    } catch (e) {
+      print('⚠️ فشل إغناء بيانات الحجوزات: $e');
+      return bookings;
+    }
+  }
+
+  void _updateProfessionalStatistics() {
+    // حساب العناصر النشطة (active أو بدون status)
+    _activeItems = _items
+        .where(
+          (item) =>
+              item['status'] == 'active' ||
+              item['status'] == null ||
+              !item.containsKey('status'),
+        )
+        .length;
+
+    print('📊 إحصائيات العناصر: المجموع ${_items.length}، النشط $_activeItems');
+
+    // حساب إحصائيات الحجوزات
+    _totalBookings = _bookings.length;
+
+    // حساب الإيرادات (للشهر الحالي فقط)
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month);
+
+    _monthlyRevenue = _bookings
+        .where(
+          (booking) =>
+              booking['status'] == 'confirmed' &&
+              booking['createdAt'] != null &&
+              (booking['createdAt'] as Timestamp).toDate().isAfter(
+                currentMonth,
+              ),
+        )
+        .fold(
+          0.0,
+          (sum, booking) =>
+              sum +
+              (double.tryParse(booking['totalPrice']?.toString() ?? '0') ??
+                  0.0),
+        );
+
+    _totalRevenue = _bookings
+        .where((booking) => booking['status'] == 'confirmed')
+        .fold(
+          0.0,
+          (sum, booking) =>
+              sum +
+              (double.tryParse(booking['totalPrice']?.toString() ?? '0') ??
+                  0.0),
+        );
+
+    print('💰 إيرادات الشهر: $_monthlyRevenue، الإجمالي: $_totalRevenue');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: RefreshIndicator(
+        onRefresh: _loadProviderData,
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: [
+            _buildProfessionalHomeScreen(),
+            _buildProfessionalBookingsScreen(),
+            ProviderStatisticsScreen(
+              providerId: _providerId ?? '',
+              providerName: _providerData?['name'] ?? 'مزود الخدمة',
+            ), // الإحصائيات
+            const ChatsListScreen(), // الرسائل/المحادثات
+            const CustomerSupportScreen(), // الدعم الفني
+            _buildProfessionalAccountScreen(),
+          ],
+        ),
+      ),
+      bottomNavigationBar: _buildProfessionalBottomNav(),
+    );
+  }
+
+  Widget _buildProfessionalBottomNav() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withOpacity(0.95),
+            Colors.white.withOpacity(0.98),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          ),
+        ],
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(25),
+          topRight: Radius.circular(25),
+        ),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(25),
+          topRight: Radius.circular(25),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: (index) => setState(() => _selectedIndex = index),
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.transparent,
+          selectedItemColor: const Color(0xFF6E1229),
+          unselectedItemColor: Colors.grey.shade600,
+          selectedFontSize: 12,
+          unselectedFontSize: 11,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
+          selectedIconTheme: const IconThemeData(size: 26),
+          unselectedIconTheme: const IconThemeData(size: 22),
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard_rounded),
+              label: 'الرئيسية',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.book_online_rounded),
+              label: 'الحجوزات',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.bar_chart_rounded),
+              label: 'الإحصائيات',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.chat_rounded),
+              label: 'الرسائل',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.support_agent),
+              label: 'الدعم',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.account_circle_rounded),
+              label: 'الحساب',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfessionalHomeScreen() {
+    if (_isLoading) {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF6E1229), Color(0xFF8B1538)],
+          ),
+        ),
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF6E1229), Color(0xFF8B1538)],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // محتوى الصفحة الرئيسية
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.only(top: 20),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: _buildItemsOverview(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemsOverview() {
+    // إذا كان مزود قاعة أعراس، اعرض واجهة إدارة القاعة
+    if (_isHallProvider()) {
+      return _buildHallManagementOverview();
+    }
+
+    // إذا كان مزود تصوير، اعرض واجهة إدارة التصوير
+    if (_isPhotographyProvider()) {
+      return _buildPhotographyManagementOverview();
+    }
+
+    // للخدمات الأخرى، اعرض الواجهة العادية
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'العناصر الخاصة بك',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              Row(
+                children: [
+                  // إخفاء زر إضافة العناصر لمزودي قاعات الأعراس والتصوير
+                  if (!_isHallProvider() && !_isPhotographyProvider())
+                    ElevatedButton.icon(
+                      onPressed: _openItemEditor,
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('إضافة عنصر'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6E1229),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: _items.isEmpty
+                ? _buildEmptyItemsState()
+                : RefreshIndicator(
+                    onRefresh: _loadProviderData,
+                    child: GridView.builder(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 0.75,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                          ),
+                      itemCount: _items.length,
+                      itemBuilder: (context, index) =>
+                          _buildItemCard(_items[index]),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyItemsState() {
+    // رسالة مختلفة لمزودي قاعات الأعراس
+    bool isHallProvider = _isHallProvider();
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isHallProvider ? Icons.event : Icons.inventory_2_outlined,
+            size: 80,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isHallProvider ? 'خدمة قاعة الأعراس' : 'لا توجد عناصر متاحة',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isHallProvider
+                ? 'قاعات الأعراس لا تحتاج إلى عناصر منفصلة. بيانات قاعتك متاحة مباشرة للعملاء.'
+                : 'قم بإضافة عناصر جديدة لخدماتك',
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // واجهة إدارة القاعة لمزودي قاعات الأعراس
+  Widget _buildHallManagementOverview() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'إدارة قاعة الأعراس',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => _openHallManagement(),
+                icon: const Icon(Icons.settings),
+                label: const Text('إدارة القاعة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2E7D32),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // بطاقة معلومات القاعة
+          if (_serviceData != null) _buildHallInfoCard(),
+
+          const SizedBox(height: 16),
+
+          // الحجوزات الأخيرة
+          _buildRecentBookingsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHallInfoCard() {
+    final hallData = _serviceData!['hallData'] as Map<String, dynamic>? ?? {};
+
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [const Color(0xFF2E7D32), const Color(0xFF4CAF50)],
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.home_work, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    hallData['hallName'] ??
+                        _serviceData!['serviceName'] ??
+                        'قاعة الأعراس',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.people,
+                    label: 'السعة',
+                    value: hallData['capacity'] ?? '300 شخص',
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.attach_money,
+                    label: 'السعر',
+                    value: '${hallData['basePrice'] ?? 0} د.ع',
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.room_service,
+                    label: 'الخدمات',
+                    value: '${hallData['totalServices'] ?? 0} خدمة',
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.location_on,
+                    label: 'المنطقة',
+                    value: _serviceData!['area'] ?? '',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoItem({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white70, size: 16),
+        const SizedBox(width: 6),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRecentBookingsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'الحجوزات الأخيرة',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1F2937),
+              ),
+            ),
+            TextButton(
+              onPressed: () =>
+                  setState(() => _selectedIndex = 1), // الانتقال لصفحة الحجوزات
+              child: const Text('عرض الكل'),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        if (_bookings.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
+            child: const Center(
+              child: Column(
+                children: [
+                  Icon(Icons.event_busy, size: 48, color: Colors.grey),
+                  SizedBox(height: 8),
+                  Text(
+                    'لا توجد حجوزات حالياً',
+                    style: TextStyle(color: Colors.grey, fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Column(
+            children: _bookings
+                .take(3)
+                .map((booking) => _buildBookingCard(booking))
+                .toList(),
+          ),
+      ],
+    );
+  }
+
+  // واجهة إدارة التصوير لمزودي خدمات التصوير
+  Widget _buildPhotographyManagementOverview() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'إدارة خدمة التصوير',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => _openPhotographyManagement(),
+                icon: const Icon(Icons.settings),
+                label: const Text('إدارة الخدمة'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7B1FA2),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // بطاقة معلومات التصوير
+          if (_serviceData != null) _buildPhotographyInfoCard(),
+
+          const SizedBox(height: 16),
+
+          // الحجوزات الأخيرة
+          _buildRecentBookingsSection(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhotographyInfoCard() {
+    // طباعة البيانات للتشخيص
+    print('📋 محتوى _serviceData الكامل: $_serviceData');
+    print('📋 محتوى _providerData الكامل: $_providerData');
+
+    // استخراج البيانات مع معالجة الحالات المختلفة
+    final serviceName =
+        _serviceData!['serviceName'] ??
+        _serviceData!['providerName'] ??
+        _providerData?['name'] ??
+        'خدمة التصوير';
+
+    final pricePerHour =
+        _serviceData!['pricePerHour'] ??
+        _serviceData!['price'] ??
+        _serviceData!['basePrice'] ??
+        0;
+
+    final cameraType = _serviceData!['cameraType'] ?? 'غير محدد';
+
+    final images =
+        _serviceData!['images'] as List? ??
+        _serviceData!['imageUrls'] as List? ??
+        [];
+
+    final area = _serviceData!['area'] ?? _providerData?['area'] ?? 'غير محدد';
+
+    print('✅ البيانات المستخرجة:');
+    print('   - serviceName: $serviceName');
+    print('   - pricePerHour: $pricePerHour');
+    print('   - cameraType: $cameraType');
+    print('   - images count: ${images.length}');
+    print('   - area: $area');
+
+    return Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF7B1FA2), Color(0xFF9C27B0)],
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.camera_alt, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    serviceName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.attach_money,
+                    label: 'السعر/ساعة',
+                    value: '$pricePerHour د.ع',
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.videocam,
+                    label: 'نوع الكاميرا',
+                    value: cameraType,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.photo_library,
+                    label: 'الصور',
+                    value: '${images.length} صورة',
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildInfoItem(
+                    icon: Icons.location_on,
+                    label: 'المنطقة',
+                    value: area,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openHallManagement() {
+    // التحقق من أن المستخدم هو مزود قاعة أعراس
+    if (!_isHallProvider()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('هذه الوظيفة متاحة فقط لمزودي قاعات الأعراس'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_providerId == null || _providerId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('خطأ: معرف المزود غير موجود'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    print('🏛️ فتح شاشة إدارة القاعة للمزود: $_providerId');
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HallManagementScreen(providerId: _providerId!),
+      ),
+    ).then((_) {
+      // تحديث البيانات بعد العودة من شاشة إدارة القاعة
+      _loadProviderData();
+    });
+  }
+
+  void _openPhotographyManagement() {
+    // التحقق من أن المستخدم هو مزود تصوير
+    if (!_isPhotographyProvider()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('هذه الوظيفة متاحة فقط لمزودي خدمات التصوير'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_providerId == null || _providerId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('خطأ: معرف المزود غير موجود'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    print('📸 فتح شاشة إدارة التصوير للمزود: $_providerId');
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            PhotographyManagementScreen(providerId: _providerId!),
+      ),
+    ).then((_) {
+      // تحديث البيانات بعد العودة من شاشة إدارة التصوير
+      _loadProviderData();
+    });
+  }
+
+  bool _isHallProvider() {
+    // 1. التحقق من الحقل الصريح isHallProvider
+    bool? isHall = _serviceData?['isHallProvider'] as bool?;
+    if (isHall == true) {
+      print('✅ تم التأكد من أن المزود هو مزود قاعات من خلال isHallProvider');
+      return true;
+    }
+
+    // 2. التحقق من نوع الخدمة في _serviceData
+    String serviceType = _serviceData?['serviceType']?.toString().trim() ?? '';
+    if (serviceType.isEmpty) {
+      // 3. التحقق من نوع الخدمة في _providerData
+      serviceType = _providerData?['serviceType']?.toString().trim() ?? '';
+    }
+
+    // طباعة معلومات التتبع
+    print('🔍 Provider Service Type: "$serviceType"');
+    print('📊 Service Data: ${_serviceData?.toString()}');
+    print('👤 Provider Data: ${_providerData?.toString()}');
+
+    // التحقق من نوع الخدمة
+    bool isHallProvider =
+        serviceType == 'قاعات اعراس' || serviceType == 'قاعة عرس';
+    print('🎯 Is Hall Provider: $isHallProvider');
+
+    // التحقق الإضافي من نوع المزود
+    String providerType =
+        _serviceData?['providerType']?.toString().trim() ?? '';
+    if (providerType.isEmpty) {
+      providerType = _providerData?['providerType']?.toString().trim() ?? '';
+    }
+
+    // إذا كان أي من الفحوصات يؤكد أنه مزود قاعة
+    return isHallProvider ||
+        providerType == 'hall' ||
+        (_serviceData?['isHallProvider'] == true) ||
+        (_providerData?['isHallProvider'] == true);
+  }
+
+  // دوال للحصول على لون ونص حالة العنصر
+  Color _getStatusColor(Map<String, dynamic> item) {
+    final status = _normalizeItemStatus(item);
+    if (status == 'active') return Colors.green;
+    if (status == 'pending') return Colors.orange;
+    if (status == 'rejected') return Colors.red;
+    return Colors.grey;
+  }
+
+  String _getStatusText(Map<String, dynamic> item) {
+    final status = _normalizeItemStatus(item);
+    if (status == 'active') return '🟢 نشط';
+    if (status == 'pending') return '🟠 معلق';
+    if (status == 'rejected') return '🔴 مرفوض';
+    return '⚪ غير محدد';
+  }
+
+  // دالة مساعدة للتحقق من كون المزود مقدم خدمة تصوير
+  bool _isPhotographyProvider() {
+    // 1. التحقق من الحقل الصريح category في _serviceData
+    String category = _serviceData?['category']?.toString().trim() ?? '';
+    if (category == 'photography') {
+      print(
+        '✅ تم التأكد من أن المزود هو مزود تصوير من خلال _serviceData category',
+      );
+      return true;
+    }
+
+    // 2. التحقق من category في _providerData
+    String providerCategory =
+        _providerData?['category']?.toString().trim() ?? '';
+    if (providerCategory == 'photography') {
+      print(
+        '✅ تم التأكد من أن المزود هو مزود تصوير من خلال _providerData category',
+      );
+      return true;
+    }
+
+    // 3. التحقق من نوع الخدمة
+    String serviceType = _serviceData?['serviceType']?.toString().trim() ?? '';
+    if (serviceType.isEmpty) {
+      serviceType = _providerData?['serviceType']?.toString().trim() ?? '';
+    }
+
+    bool isPhotography =
+        serviceType == 'التصوير' || serviceType == 'جلسات تصوير';
+
+    // 4. التحقق من provider_type
+    String providerType =
+        _serviceData?['providerType']?.toString().trim() ?? '';
+    if (providerType.isEmpty) {
+      providerType = _providerData?['providerType']?.toString().trim() ?? '';
+    }
+
+    // 5. التحقق من requestType في provider_requests
+    String requestType = _serviceData?['requestType']?.toString().trim() ?? '';
+
+    print(
+      '📸 Photography Check - category: $category, providerCategory: $providerCategory, serviceType: $serviceType, providerType: $providerType, requestType: $requestType',
+    );
+
+    return isPhotography ||
+        providerType == 'photography' ||
+        category == 'photography' ||
+        providerCategory == 'photography' ||
+        requestType == 'photography';
+  }
+
+  // دالة للتحقق من الخدمات غير القابلة للحجز (التي لا تحتاج إدارة حجوزات)
+  bool _isNonBookableService() {
+    // الحصول على category من بيانات المزود
+    String category = _providerData?['category']?.toString().trim() ?? '';
+    if (category.isEmpty) {
+      category = _serviceData?['category']?.toString().trim() ?? '';
+    }
+
+    // الحصول على serviceType من بيانات المزود
+    String serviceType = _providerData?['serviceType']?.toString().trim() ?? '';
+    if (serviceType.isEmpty) {
+      serviceType = _serviceData?['serviceType']?.toString().trim() ?? '';
+    }
+
+    // قائمة الخدمات غير القابلة للحجز
+    final nonBookableCategories = [
+      'restaurant', // مطاعم
+      'bride_dress', // فساتين
+      'groom_suit', // بدلات
+      'car_decoration', // تزيين سيارة
+      'cake', // كيك
+      'flowers', // ورود
+      'honeymoon', // شهر عسل
+    ];
+
+    final nonBookableServiceTypes = [
+      'مطاعم',
+      'فساتين',
+      'بدلات',
+      'تزيين سيارة',
+      'كيك',
+      'ورود',
+      'شهر عسل',
+    ];
+
+    return nonBookableCategories.contains(category) ||
+        nonBookableServiceTypes.contains(serviceType);
+  }
+
+  Widget _buildItemCard(Map<String, dynamic> item) {
+    final bool isPending = item['status'] == 'pending';
+
+    return Card(
+      elevation: 6,
+      shadowColor: Colors.black.withOpacity(0.08),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        onTap: () => isPending
+            ? _showPendingItemOptions(item)
+            : _showProfessionalItemDetailsDialog(item),
+        onLongPress: isPending ? () => _showPendingItemOptions(item) : null,
+        borderRadius: BorderRadius.circular(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Column(
+            children: [
+              // صورة مع غطاء تدرج ومعلومات مختصرة فوقها
+              Stack(
+                children: [
+                  SizedBox(
+                    height: 130,
+                    width: double.infinity,
+                    child: _buildProfessionalItemImage(item),
+                  ),
+                  // تدرج سفلي لمزيد من الاحترافية
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.05),
+                            Colors.black.withOpacity(0.25),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // شارة الحالة وزر اللمس
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(item),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _getStatusText(item),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.8),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.touch_app_rounded,
+                        size: 16,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ),
+                  // اسم العنصر والسعر فوق الصورة
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 10,
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              item['name'] ?? 'عنصر بدون اسم',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF1F2937),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF059669),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.monetization_on_rounded,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${item['price'] ?? '0'} د.ع',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              // معلومات إضافية أسفل الصورة
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(16),
+                    bottomRight: Radius.circular(16),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item['serviceName'] ??
+                            _serviceData?['serviceName'] ??
+                            'خدمتك',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.grey[700], fontSize: 11),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          size: 14,
+                          color: Colors.grey[600],
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          item['area'] ??
+                              _serviceData?['area'] ??
+                              _providerData?['area'] ??
+                              'غير محدد',
+                          style: TextStyle(
+                            color: Colors.grey[700],
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfessionalItemImage(Map<String, dynamic> item) {
+    // البحث عن الصورة في مفاتيح مختلفة
+    String? imageUrl;
+
+    // البحث في مصفوفة الصور أولاً
+    if (item['imageUrls'] != null &&
+        item['imageUrls'] is List &&
+        (item['imageUrls'] as List).isNotEmpty) {
+      imageUrl = (item['imageUrls'] as List).first.toString();
+    } else if (item['imageUrl'] != null &&
+        item['imageUrl'].toString().isNotEmpty) {
+      imageUrl = item['imageUrl'];
+    } else if (item['image'] != null && item['image'].toString().isNotEmpty) {
+      imageUrl = item['image'];
+    } else if (item['photo'] != null && item['photo'].toString().isNotEmpty) {
+      imageUrl = item['photo'];
+    } else if (item['url'] != null && item['url'].toString().isNotEmpty) {
+      imageUrl = item['url'];
+    }
+
+    print('🖼️ محاولة عرض صورة العنصر: ${item['name']}');
+    print('🔍 URL الصورة: $imageUrl');
+    print('📋 بيانات العنصر: ${item.keys.toList()}');
+
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
+        ),
+        child: Stack(
+          children: [
+            Image.network(
+              imageUrl,
+              width: double.infinity,
+              height: double.infinity,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  color: Colors.grey[100],
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      value: loadingProgress.expectedTotalBytes != null
+                          ? loadingProgress.cumulativeBytesLoaded /
+                                loadingProgress.expectedTotalBytes!
+                          : null,
+                      strokeWidth: 2,
+                      color: const Color(0xFF6E1229),
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: Colors.grey[50],
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.image_not_supported_rounded,
+                        size: 40,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'فشل تحميل الصورة',
+                        style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // عرض أيقونة افتراضية عند عدم وجود صورة
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.inventory_2_rounded,
+                size: 40,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'لا توجد صورة',
+                style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildEmptyBookingsState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.event_note_outlined, size: 80, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          const Text(
+            'لا توجد حجوزات معلقة',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'ستظهر الحجوزات الجديدة هنا',
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookingCard(Map<String, dynamic> booking) {
+    // نسخة مضغّرة بمعلومات أساسية فقط
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 7,
+      shadowColor: Colors.black.withOpacity(0.1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _showBookingDetailsDialog(booking),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [const Color(0xFFFFFFFF), const Color(0xFFF7F9FC)],
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: const Color(0xFF6E1229),
+                child: Text(
+                  booking['customerName']?.substring(0, 1).toUpperCase() ?? 'ع',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      booking['customerName'] ?? 'عميل غير محدد',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    // شارة حالة الحجز
+                    _buildStatusChip(booking['status']),
+                    Row(
+                      children: [
+                        if ((booking['itemName'] ?? '')
+                            .toString()
+                            .isNotEmpty) ...[
+                          const Icon(
+                            Icons.inventory_2_rounded,
+                            size: 16,
+                            color: Color(0xFF6B7280),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              booking['itemName'],
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF4B5563),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.event,
+                          size: 16,
+                          color: Color(0xFF6B7280),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          booking['bookingDate'] != null
+                              ? _formatDateOnly(booking['bookingDate'])
+                              : 'غير محدد',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Icon(
+                          Icons.location_on,
+                          size: 16,
+                          color: Color(0xFF6B7280),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            '${booking['customerGovernorate'] ?? ''}${(booking['customerGovernorate'] ?? '').toString().isNotEmpty && (booking['customerArea'] ?? '').toString().isNotEmpty ? ' - ' : ''}${booking['customerArea'] ?? ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // أزرار مصغّرة
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'محادثة',
+                    iconSize: 22,
+                    icon: const Icon(
+                      Icons.chat_bubble_rounded,
+                      color: Color(0xFF6E1229),
+                    ),
+                    onPressed: () async {
+                      final otherUserId =
+                          (booking['customerId'] ?? booking['customerPhone'])
+                              ?.toString();
+                      final otherUserName =
+                          (booking['customerName'] ?? 'العميل').toString();
+                      if (otherUserId == null || otherUserId.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'معرف الزبون غير متوفر لبدء المحادثة',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      await ChatHelper.startChatWithUser(
+                        context: context,
+                        otherUserId: otherUserId,
+                        otherUserName: otherUserName,
+                        otherUserRole: 'customer',
+                      );
+                    },
+                  ),
+                  if ((booking['status'] ?? 'pending') == 'pending') ...[
+                    IconButton(
+                      iconSize: 22,
+                      icon: const Icon(Icons.check_circle, color: Colors.green),
+                      onPressed: () => _handleBookingAction('approve', booking),
+                    ),
+                    IconButton(
+                      iconSize: 22,
+                      icon: const Icon(Icons.cancel, color: Colors.red),
+                      onPressed: () => _handleBookingAction('reject', booking),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(dynamic status) {
+    final s = (status ?? 'pending').toString();
+    Color bg;
+    Color fg;
+    String label;
+    switch (s) {
+      case 'confirmed':
+      case 'approved':
+        bg = const Color(0xFFE8F5E9);
+        fg = const Color(0xFF1B5E20);
+        label = 'مقبول';
+        break;
+      case 'rejected':
+        bg = const Color(0xFFFFEBEE);
+        fg = const Color(0xFFB71C1C);
+        label = 'مرفوض';
+        break;
+      default:
+        bg = const Color(0xFFEEF2FF);
+        fg = const Color(0xFF3730A3);
+        label = 'قيد المعالجة';
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+
+  String _formatDateTime(dynamic value) {
+    if (value == null) return 'غير محدد';
+    DateTime dt;
+    if (value is Timestamp) {
+      dt = value.toDate();
+    } else if (value is DateTime)
+      dt = value;
+    else {
+      try {
+        dt = DateTime.parse(value.toString());
+      } catch (_) {
+        return value.toString();
+      }
+    }
+    // صيغة مختصرة: yyyy-MM-dd HH:mm
+    two(int n) => n.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  String _formatDateOnly(dynamic value) {
+    if (value == null) return 'غير محدد';
+    DateTime dt;
+    if (value is Timestamp) {
+      dt = value.toDate();
+    } else if (value is DateTime)
+      dt = value;
+    else {
+      try {
+        dt = DateTime.parse(value.toString());
+      } catch (_) {
+        return value.toString();
+      }
+    }
+    two(int n) => n.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)}';
+  }
+
+  void _showBookingDetailsDialog(Map<String, dynamic> booking) {
+    // نافذة تفاصيل جديدة أكثر احترافية عند الضغط
+    _resolveCustomerMeta(booking);
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF6E1229), Color(0xFF8B1538)],
+                ),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.event_note, color: Colors.white),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'تفاصيل الحجز',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  if ((booking['receiptUrl'] ?? '').toString().isNotEmpty)
+                    const Icon(Icons.receipt_long, color: Colors.white),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.person,
+                        size: 16,
+                        color: Color(0xFF374151),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'الزبون: ${booking['customerName'] ?? 'غير محدد'}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if ((booking['customerPhone'] ?? '')
+                      .toString()
+                      .isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.phone,
+                          size: 16,
+                          color: Color(0xFF374151),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'الهاتف: ${booking['customerPhone']}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if ((booking['customerGovernorate'] ?? '')
+                          .toString()
+                          .isNotEmpty ||
+                      (booking['customerArea'] ?? '')
+                          .toString()
+                          .isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on,
+                          size: 16,
+                          color: Color(0xFF374151),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'الموقع: ${booking['customerGovernorate'] ?? ''} - ${booking['customerArea'] ?? ''}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.calendar_month,
+                        size: 16,
+                        color: Color(0xFF374151),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'تاريخ إنشاء: ${_formatDateTime(booking['createdAt'])}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF374151),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.event,
+                        size: 16,
+                        color: Color(0xFF374151),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'تاريخ الحجز: ${_formatDateOnly(booking['bookingDate'])}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF374151),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Builder(
+                    builder: (_) {
+                      final dayStatus = booking['dayStatus']?.toString();
+                      final hasSlot =
+                          booking['timeSlot'] != null &&
+                          booking['timeSlot']['startTime'] != null;
+                      final isFullDay = dayStatus == 'fullyBooked' || !hasSlot;
+                      return Row(
+                        children: [
+                          const Icon(
+                            Icons.access_time,
+                            size: 16,
+                            color: Color(0xFF374151),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isFullDay
+                                ? 'نوع الحجز: اليوم كامل'
+                                : 'نوع الحجز: فترة محددة (${booking['timeSlot']['startTime']} - ${booking['timeSlot']['endTime']})',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  if ((booking['notes'] ?? '').toString().isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.note,
+                          size: 16,
+                          color: Color(0xFF374151),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'ملاحظات: ${booking['notes']}',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if ((booking['receiptUrl'] ?? '').toString().isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'إيصال الدفع:',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () =>
+                          _openImagePreview(context, booking['receiptUrl']),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          booking['receiptUrl'],
+                          height: 140,
+                          fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => Container(
+                            height: 140,
+                            color: Colors.grey.shade100,
+                            child: Center(
+                              child: Icon(
+                                Icons.receipt_long,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                children: [
+                  TextButton.icon(
+                    onPressed: () async {
+                      final otherUserId =
+                          (booking['customerId'] ?? booking['customerPhone'])
+                              ?.toString();
+                      final otherUserName =
+                          (booking['customerName'] ?? 'العميل').toString();
+                      if (otherUserId == null || otherUserId.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'معرف الزبون غير متوفر لبدء المحادثة',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.pop(context);
+                      await ChatHelper.startChatWithUser(
+                        context: context,
+                        otherUserId: otherUserId,
+                        otherUserName: otherUserName,
+                        otherUserRole: 'customer',
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.chat_rounded,
+                      color: Color(0xFF6E1229),
+                    ),
+                    label: const Text(
+                      'محادثة',
+                      style: TextStyle(color: Color(0xFF6E1229)),
+                    ),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  if ((booking['status'] ?? 'pending') == 'pending') ...[
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _handleBookingAction('approve', booking);
+                      },
+                      icon: const Icon(Icons.check_circle, color: Colors.green),
+                      label: const Text(
+                        'قبول',
+                        style: TextStyle(color: Colors.green),
+                      ),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _handleBookingAction('reject', booking);
+                      },
+                      icon: const Icon(Icons.cancel, color: Colors.red),
+                      label: const Text(
+                        'رفض',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openImagePreview(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        child: InteractiveViewer(
+          child: Image.network(
+            url,
+            fit: BoxFit.contain,
+            errorBuilder: (c, e, s) => SizedBox(
+              height: 260,
+              child: Center(
+                child: Icon(Icons.broken_image, color: Colors.grey.shade500),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // جلب احتياطي لاسم/هاتف/موقع الزبون إذا كانت الحجوزات القديمة لا تحتويها
+  Future<void> _resolveCustomerMeta(Map<String, dynamic> booking) async {
+    try {
+      final hasGov = (booking['customerGovernorate'] ?? '')
+          .toString()
+          .isNotEmpty;
+      final hasArea = (booking['customerArea'] ?? '').toString().isNotEmpty;
+      final hasName = (booking['customerName'] ?? '').toString().isNotEmpty;
+      final hasPhone = (booking['customerPhone'] ?? '').toString().isNotEmpty;
+
+      if (hasGov && hasArea && hasName && hasPhone) return; // مكتملة
+
+      final cid = (booking['customerId'] ?? booking['customerPhone'])
+          ?.toString();
+      if (cid == null || cid.isEmpty) return;
+
+      // المحاولة أولاً في users
+      final usersDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(cid)
+          .get();
+      Map<String, dynamic>? data = usersDoc.data();
+      if (data == null) {
+        // محاولة البحث بالهاتف إذا كان المعرّف ليس رقم
+        final q = await FirebaseFirestore.instance
+            .collection('users')
+            .where('phone', isEqualTo: cid)
+            .limit(1)
+            .get();
+        if (q.docs.isNotEmpty) {
+          data = q.docs.first.data();
+        }
+      }
+
+      // إن لم توجد بيانات في users، جرّب customers
+      if (data == null) {
+        final customersDoc = await FirebaseFirestore.instance
+            .collection('customers')
+            .doc(cid)
+            .get();
+        data = customersDoc.data();
+      }
+
+      if (data != null) {
+        booking['customerName'] =
+            booking['customerName'] ?? data['name'] ?? booking['customerName'];
+        booking['customerPhone'] =
+            booking['customerPhone'] ??
+            data['phone'] ??
+            booking['customerPhone'];
+        booking['customerGovernorate'] =
+            booking['customerGovernorate'] ??
+            data['governorate'] ??
+            data['city'] ??
+            booking['customerGovernorate'];
+        booking['customerArea'] =
+            booking['customerArea'] ?? data['area'] ?? booking['customerArea'];
+
+        // تحد يث الحالة المحلية لعرض فوري
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      print('⚠️ فشل إكمال بيانات الزبون للحجز ${booking['id']}: $e');
+    }
+  }
+
+  Widget _buildProfessionalBookingsScreen() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF6E1229), Color(0xFF8B1538)],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.book_online_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'إدارة الحجوزات',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${_bookings.length} حجز',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // محتوى الحجوزات
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.only(top: 8),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                ),
+                child: _bookings.isEmpty
+                    ? _buildEmptyBookingsState()
+                    : RefreshIndicator(
+                        onRefresh: _loadProviderData,
+                        child: ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            // الحجوزات المعلقة
+                            ..._pendingBookings.map(_buildBookingCard),
+                            const SizedBox(height: 12),
+                            if (_processedBookings.isNotEmpty) ...[
+                              const Divider(),
+                              Row(
+                                children: const [
+                                  Icon(Icons.inbox, color: Color(0xFF6B7280)),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'حجوزات مُعالجة (قبول/رفض)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              ..._processedBookings.map(_buildBookingCard),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Spacer(),
+                                  FilledButton.icon(
+                                    onPressed: _deleteProcessedBookings,
+                                    icon: const Icon(
+                                      Icons.delete_forever,
+                                      size: 20,
+                                    ),
+                                    label: const Text('حذف الحجوزات المُعالجة'),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: const Color(0xFFDC2626),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(24),
+                                      ),
+                                      elevation: 2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // تقسيم الحجوزات إلى معلّقة ومُعالجة (قبول/رفض)
+  List<Map<String, dynamic>> get _pendingBookings =>
+      _bookings.where((b) => (b['status'] ?? 'pending') == 'pending').toList();
+  List<Map<String, dynamic>> get _processedBookings => _bookings
+      .where((b) => ['confirmed', 'approved', 'rejected'].contains(b['status']))
+      .toList();
+
+  Widget _buildProfessionalAccountScreen() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFF8FAFC), Color(0xFFE2E8F0)],
+        ),
+      ),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            children: [
+              // معلومات الحساب (تم حذف الـ Header)
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    // إحصائيات سريعة
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildAccountStatCard(
+                            'العناصر النشطة',
+                            _activeItems.toString(),
+                            Icons.inventory_2_rounded,
+                            const Color(0xFF6E1229),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildAccountStatCard(
+                            'الحجوزات',
+                            _totalBookings.toString(),
+                            Icons.book_online_rounded,
+                            const Color(0xFF6E1229),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // قائمة خيارات الحساب - تم حذف حقول الإيرادات
+                    _buildAccountItem(
+                      'معلومات الحساب',
+                      _providerData?['name'] ?? '',
+                      Icons.person_rounded,
+                      const Color(0xFF6E1229),
+                    ),
+                    _buildAccountItem(
+                      'رقم الهاتف',
+                      _providerData?['phone'] ?? '',
+                      Icons.phone_rounded,
+                      const Color(0xFF6E1229),
+                    ),
+                    _buildAccountItem(
+                      'المحافظة',
+                      _providerData?['governorate'] ?? 'غير محدد',
+                      Icons.location_city,
+                      const Color(0xFF6E1229),
+                    ),
+                    _buildAccountItem(
+                      'المنطقة',
+                      _providerData?['area'] ?? 'غير محدد',
+                      Icons.location_on,
+                      const Color(0xFF6E1229),
+                    ),
+                    _buildAccountItem(
+                      'بطاقة الائتمان',
+                      _providerData?['creditCard'] ?? 'غير محدد',
+                      Icons.credit_card,
+                      const Color(0xFF6E1229),
+                    ),
+                    _buildAccountItem(
+                      'عدد العناصر النشطة',
+                      _activeItems.toString(),
+                      Icons.inventory_2_rounded,
+                      const Color(0xFF6E1229),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // زر تسجيل الخروج
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _logout,
+                        icon: const Icon(Icons.logout_rounded),
+                        label: const Text('تسجيل الخروج'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6E1229),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 32),
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountItem(
+    String title,
+    String subtitle,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 24),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openItemEditor() async {
+    // جلب البيانات الحقيقية من قاعدة البيانات
+    // الاسم التجاري = اسم المزود من providers
+    // نوع الخدمة = category من serviceData أو providerData
+
+    String businessName = _providerData?['name'] ?? 'مزود الخدمة';
+    // استخدم النوع العربي الصحيح من بيانات الخدمة أو حوّل من الكود الإنجليزي
+    String serviceTypeArabic =
+        _serviceData?['serviceType'] ??
+        _serviceData?['categoryArabic'] ??
+        _providerData?['serviceType'] ??
+        _providerData?['categoryArabic'] ??
+        '';
+
+    if (serviceTypeArabic.isEmpty) {
+      final categoryCode =
+          _serviceData?['category'] ?? _providerData?['category'] ?? '';
+      const Map<String, String> englishToArabic = {
+        'hall': 'قاعات اعراس',
+        'hotel': 'فنادق',
+        'restaurant': 'مطاعم',
+        'cake': 'كيك',
+        'car_rental': 'تأجير سيارات',
+        'flowers': 'ورود',
+        'photography': 'تصوير',
+        'salon_care': 'صالونات تجميل',
+        'honeymoon': 'شهر عسل',
+        'bride_dress': 'فساتين زفاف',
+        'groom_suit': 'بدلات رجالية',
+        'car': 'تأجير سيارات',
+        'car_decoration': 'تزيين السيارات',
+        'other': 'خدمات عامة',
+        'general': 'خدمات عامة',
+      };
+      serviceTypeArabic = englishToArabic[categoryCode] ?? 'خدمات عامة';
+    }
+
+    String area =
+        _serviceData?['area'] ??
+        _providerData?['area'] ??
+        _providerData?['address'] ??
+        'غير محدد';
+
+    // جلب serviceImage من published_providers
+    String? serviceImage;
+    String? serviceImageUrl;
+    try {
+      final publishedDoc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(_providerId)
+          .get();
+
+      if (publishedDoc.exists) {
+        final data = publishedDoc.data();
+        serviceImage = data?['serviceImage'];
+        serviceImageUrl = data?['serviceImageUrl'];
+        print('🖼️ تم جلب serviceImage من published_providers: $serviceImage');
+      }
+    } catch (e) {
+      print('⚠️ خطأ في جلب serviceImage: $e');
+    }
+
+    Map<String, dynamic> serviceData = {
+      'providerId': _providerId ?? '',
+      'providerName': businessName,
+      'providerPhone': _providerId ?? '',
+      'serviceType': serviceTypeArabic,
+      'serviceName': businessName, // الاسم التجاري = اسم المزود
+      'area': area,
+      'serviceImage':
+          serviceImage ??
+          _serviceData?['serviceImage'] ??
+          _providerData?['serviceImage'],
+      'serviceImageUrl':
+          serviceImageUrl ??
+          _serviceData?['serviceImageUrl'] ??
+          _providerData?['serviceImageUrl'],
+      'imageUrl':
+          serviceImage ??
+          _serviceData?['imageUrl'] ??
+          _providerData?['imageUrl'],
+    };
+
+    print('📋 البيانات المرسلة لشاشة إضافة العناصر:');
+    print(
+      '   - الاسم التجاري (من providers.name): ${serviceData['serviceName']}',
+    );
+    print('   - اسم المزود: ${serviceData['providerName']}');
+    print('   - نوع الخدمة (من category): ${serviceData['serviceType']}');
+    print('   - المنطقة: ${serviceData['area']}');
+    print('   - serviceImage: ${serviceData['serviceImage']}');
+    print('📊 _providerData: ${_providerData?['name']}');
+    print('📊 _serviceData category: ${_serviceData?['category']}');
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            ProviderItemsRegistrationScreen(serviceData: serviceData),
+      ),
+    ).then((_) => _loadProviderData());
+  }
+
+  // عرض خيارات للعناصر المعلقة (تعديل/حذف)
+  void _showPendingItemOptions(Map<String, dynamic> item) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              item['name'] ?? 'عنصر معلق',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                'قيد المراجعة - في انتظار موافقة الإدارة',
+                style: TextStyle(
+                  color: Colors.orange,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Color(0xFF10B981),
+                child: Icon(Icons.edit, color: Colors.white),
+              ),
+              title: const Text('edit item'),
+              subtitle: const Text('تعديل معلومات العنصر قبل الموافقة'),
+              onTap: () {
+                Navigator.pop(context);
+                _editPendingItem(item);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Colors.red,
+                child: Icon(Icons.delete, color: Colors.white),
+              ),
+              title: const Text('delete item'),
+              subtitle: const Text('حذف الطلب بشكل نهائي'),
+              onTap: () {
+                Navigator.pop(context);
+                _deletePendingItem(item);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // تعديل عنصر معلق
+  Future<void> _editPendingItem(Map<String, dynamic> item) async {
+    // فتح شاشة التعديل
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ItemEditScreen(item: item)),
+    ).then((_) => _loadProviderData());
+  }
+
+  // حذف عنصر معلق
+  Future<void> _deletePendingItem(Map<String, dynamic> item) async {
+    print('🚀 تم استدعاء دالة _deletePendingItem للعنصر: ${item['name']}');
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الحذف'),
+        content: Text(
+          'هل أنت متأكد من حذف "${item['name']}"?\nهذا الإجراء لا يمكن التراجع عنه.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              print('✅ المستخدم أكد عملية الحذف');
+              Navigator.pop(context, true);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        print('🗑️ بدء حذف العنصر: ${item['name']}');
+        print('🆔 معرف العنصر: ${item['id']}');
+        print('📦 providerId: ${item['providerId']}');
+        print('🏷️ serviceType: ${item['serviceType']}');
+        print('📁 category: ${item['category']}');
+
+        // التحقق من وجود معرف العنصر
+        if (item['id'] == null || item['id'].toString().isEmpty) {
+          print('❌ خطأ: معرف العنصر غير موجود!');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('خطأ: معرف العنصر غير موجود'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+
+        // 1. حذف من provider_items
+        print('🗑️ خطوة 1: حذف من provider_items...');
+        await FirebaseFirestore.instance
+            .collection('provider_items')
+            .doc(item['id'])
+            .delete();
+        print('✅ تم الحذف من provider_items بنجاح');
+
+        // 2. حذف من المجموعة الأصلية
+        String category = item['category']?.toString() ?? '';
+        String serviceType = item['serviceType']?.toString() ?? '';
+
+        // خريطة لتحويل serviceType العربي إلى category
+        Map<String, String> arabicToCategory = {
+          'مطعم': 'restaurant',
+          'مطاعم': 'restaurant',
+          'قاعات اعراس': 'hall',
+          'قاعة عرس': 'hall',
+          'فنادق': 'hotel',
+          'فندق': 'hotel',
+          'كيك': 'cake',
+          'تأجير سيارات': 'car',
+          'سيارات': 'car',
+          'ورود': 'flowers',
+          'تصوير': 'photography',
+          'جلسات تصوير': 'photography',
+          'صالونات تجميل': 'salon_care',
+          'صالون': 'salon_care',
+          'شهر عسل': 'honeymoon',
+          'فساتين زفاف': 'bride_dress',
+          'فساتين': 'bride_dress',
+          'بدلات رجالية': 'groom_suit',
+          'بدلات': 'groom_suit',
+          'تزيين السيارات': 'car_decoration',
+          'تزيين سيارة': 'car_decoration',
+        };
+
+        if (category.isEmpty && arabicToCategory.containsKey(serviceType)) {
+          category = arabicToCategory[serviceType]!;
+          print(
+            '✅ تم تحويل serviceType "$serviceType" إلى category "$category"',
+          );
+        }
+
+        print('📁 الـ category النهائي: "$category"');
+
+        Map<String, String> categoryToCollection = {
+          'hall': 'hall',
+          'hotel': 'hotel',
+          'cake': 'cake',
+          'restaurant': 'restaurant',
+          'car': 'car',
+          'flowers': 'flowers',
+          'photography': 'photography',
+          'salon_care': 'salon_care',
+          'honeymoon': 'honeymoon',
+          'bride_dress': 'bride_dress',
+          'groom_suit': 'groom_suit',
+          'car_decoration': 'car_decoration',
+        };
+
+        String originalCollection = categoryToCollection[category] ?? '';
+        print('🗂️ اسم المجموعة الأصلية: "$originalCollection"');
+
+        if (originalCollection.isNotEmpty) {
+          print('🗑️ خطوة 2: حذف من المجموعة الأصلية $originalCollection...');
+          final providerId = item['providerId']?.toString() ?? '';
+          final itemName = item['name']?.toString() ?? '';
+
+          print('🔍 البحث بـ providerId: "$providerId", name: "$itemName"');
+
+          if (providerId.isNotEmpty && itemName.isNotEmpty) {
+            var query = await FirebaseFirestore.instance
+                .collection(originalCollection)
+                .where('providerId', isEqualTo: providerId)
+                .where('name', isEqualTo: itemName)
+                .get();
+
+            print(
+              '📊 تم العثور على ${query.docs.length} عنصر في $originalCollection',
+            );
+
+            for (var doc in query.docs) {
+              await FirebaseFirestore.instance
+                  .collection(originalCollection)
+                  .doc(doc.id)
+                  .delete();
+              print('✅ تم الحذف من $originalCollection (ID: ${doc.id})');
+            }
+          } else {
+            print('⚠️ providerId أو itemName فارغ!');
+          }
+        } else {
+          print(
+            '⚠️ لم يتم تحديد المجموعة الأصلية (category فارغ أو غير معروف)',
+          );
+        }
+
+        // 3. حذف من published_items
+        print('🗑️ خطوة 3: حذف من published_items...');
+        try {
+          final providerId = item['providerId']?.toString() ?? '';
+          final itemName = item['name']?.toString() ?? '';
+
+          print(
+            '🔍 البحث في published_items بـ providerId: "$providerId", name: "$itemName"',
+          );
+
+          if (providerId.isNotEmpty && itemName.isNotEmpty) {
+            var publishedQuery = await FirebaseFirestore.instance
+                .collection('published_items')
+                .where('providerId', isEqualTo: providerId)
+                .where('name', isEqualTo: itemName)
+                .get();
+
+            print(
+              '📊 تم العثور على ${publishedQuery.docs.length} عنصر في published_items',
+            );
+
+            for (var doc in publishedQuery.docs) {
+              await FirebaseFirestore.instance
+                  .collection('published_items')
+                  .doc(doc.id)
+                  .delete();
+              print('✅ تم الحذف من published_items (ID: ${doc.id})');
+            }
+          }
+        } catch (e) {
+          print('ℹ️ خطأ أو لم يتم العثور على العنصر في published_items: $e');
+        }
+
+        print('🎉 اكتمل الحذف من جميع المجموعات، جاري تحديث الواجهة...');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ تم حذف العنصر بنجاح من جميع المجموعات'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          await _loadProviderData();
+          print('✅ تم تحديث واجهة المستخدم');
+        }
+      } catch (e) {
+        print('❌ خطأ في الحذف: $e');
+        print('❌ Stack trace: ${StackTrace.current}');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('خطأ في الحذف: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } else {
+      print('ℹ️ تم إلغاء عملية الحذف من قبل المستخدم');
+    }
+  }
+
+  void _handleBookingAction(String action, Map<String, dynamic> booking) async {
+    try {
+      String newStatus = action == 'approve' ? 'confirmed' : 'rejected';
+
+      await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(booking['id'])
+          .update({'status': newStatus});
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(action == 'approve' ? 'تم قبول الحجز' : 'تم رفض الحجز'),
+          backgroundColor: action == 'approve' ? Colors.green : Colors.red,
+        ),
+      );
+
+      // تحديث فوري لإخفاء الأزرار وإظهار شارة الحالة
+      setState(() {
+        booking['status'] = newStatus;
+      });
+
+      _loadProviderData();
+
+      // إشعار الزبون وتحديث مسار سريع للمزامنة على تطبيقه
+      try {
+        final customerId = (booking['customerId'] ?? booking['customerPhone'])
+            ?.toString();
+        if (customerId != null && customerId.isNotEmpty) {
+          // كتابة تحديث حالة في subcollection ليقرأه تطبيق الزبون فوراً إن كان يعتمد listeners
+          final statusRef = FirebaseFirestore.instance
+              .collection('users')
+              .doc(customerId)
+              .collection('booking_updates')
+              .doc(booking['id']);
+          await statusRef.set({
+            'bookingId': booking['id'],
+            'status': newStatus,
+            'providerId': _providerId,
+            'providerName': _providerData?['name'] ?? 'مزود الخدمة',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+          // إرسال إشعار دفع عبر خدمة الإشعارات إن كانت متاحة
+          await NotificationService().sendNotificationToUser(
+            userId: customerId,
+            title: newStatus == 'confirmed' ? 'تم قبول الحجز' : 'تم رفض الحجز',
+            body: newStatus == 'confirmed'
+                ? 'قام ${_providerData?['name'] ?? 'مزود الخدمة'} بقبول طلبك.'
+                : 'قام ${_providerData?['name'] ?? 'مزود الخدمة'} برفض طلبك.',
+            data: {
+              'type': 'booking_status',
+              'bookingId': booking['id'] ?? '',
+              'status': newStatus,
+            },
+          );
+        }
+      } catch (e) {
+        debugPrint('⚠️ فشل إرسال تحديث الحالة للزبون: $e');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في معالجة الحجز: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _deleteProcessedBookings() async {
+    try {
+      final processed = _processedBookings;
+      if (processed.isEmpty) return;
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('تأكيد الحذف'),
+          content: const Text(
+            'سيتم حذف جميع الحجوزات المقبولة أو المرفوضة. هل أنت متأكد؟',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('إلغاء'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final b in processed) {
+        final id = b['id'];
+        if (id != null) {
+          batch.delete(
+            FirebaseFirestore.instance.collection('bookings').doc(id),
+          );
+        }
+      }
+      await batch.commit();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم حذف الحجوزات المعالجة')));
+      _loadProviderData();
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تعذر حذف الحجوزات: $e')));
+    }
+  }
+
+  Future<void> _logout() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // حذف الجلسة من Firestore
+      if (_providerId != null) {
+        await FirebaseFirestore.instance
+            .collection('sessions')
+            .doc(_providerId)
+            .delete();
+      }
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const SplashScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('خطأ في تسجيل الخروج: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showProfessionalItemDetailsDialog(Map<String, dynamic> item) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Handle
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item['name'] ?? 'تفاصيل العنصر',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1F2937),
+                        ),
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                      onSelected: (value) {
+                        Navigator.pop(context);
+                        if (value == 'edit') {
+                          _editProfessionalItem(item);
+                        } else if (value == 'delete') {
+                          _confirmDeleteItem(item);
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.edit,
+                                color: Theme.of(
+                                  context,
+                                ).appBarTheme.backgroundColor,
+                              ),
+                              SizedBox(width: 8),
+                              Text('تعديل'),
+                            ],
+                          ),
+                        ),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('حذف'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // معرض الصور
+                      _buildImageGallery(item),
+
+                      const SizedBox(height: 24),
+
+                      // تفاصيل العنصر
+                      _buildItemDetailSection(
+                        'اسم العنصر',
+                        item['name'] ?? 'غير محدد',
+                        Icons.label,
+                      ),
+                      _buildItemDetailSection(
+                        'السعر',
+                        '${item['price'] ?? '0'} د.ع',
+                        Icons.monetization_on,
+                      ),
+                      _buildItemDetailSection(
+                        'الوصف',
+                        item['details'] ?? item['description'] ?? 'لا يوجد وصف',
+                        Icons.description,
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // زر إدارة الحجوزات (فقط للخدمات القابلة للحجز)
+                      if (!_isNonBookableService())
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              _openBookingManagement(item);
+                            },
+                            icon: const Icon(Icons.calendar_today),
+                            label: const Text('إدارة الحجوزات'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6E1229),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 40),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageGallery(Map<String, dynamic> item) {
+    List<String> images = [];
+
+    // جمع جميع الصور المتاحة
+    // البحث في مصفوفة الصور أولاً
+    if (item['imageUrls'] != null && item['imageUrls'] is List) {
+      images.addAll(List<String>.from(item['imageUrls']));
+    }
+    if (item['imageUrl'] != null && item['imageUrl'].toString().isNotEmpty) {
+      images.add(item['imageUrl']);
+    }
+    if (item['image'] != null && item['image'].toString().isNotEmpty) {
+      images.add(item['image']);
+    }
+    if (item['images'] != null && item['images'] is List) {
+      images.addAll(List<String>.from(item['images']));
+    }
+
+    // إزالة الصور المكررة والفارغة
+    images = images.where((img) => img.isNotEmpty).toSet().toList();
+
+    print('🖼️ عدد الصور الموجودة: ${images.length}');
+    print('📷 قائمة الصور: $images');
+
+    if (images.isEmpty) {
+      return Container(
+        height: 200,
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.image_not_supported,
+                size: 48,
+                color: Colors.grey[400],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'لا توجد صور متاحة',
+                style: TextStyle(color: Colors.grey[500]),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'الصور',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1F2937),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 250,
+          child: PageView.builder(
+            itemCount: images.length,
+            itemBuilder: (context, index) => Container(
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.network(
+                  images[index],
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Colors.grey[200],
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.broken_image,
+                            size: 48,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'خطأ في تحميل الصورة',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (images.length > 1) ...[
+          const SizedBox(height: 12),
+          Center(
+            child: Text(
+              '${images.length} صور متاحة - اسحب لعرض المزيد',
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildItemDetailSection(String title, String value, IconData icon) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6E1229).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: const Color(0xFF6E1229), size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF1F2937),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openBookingManagement(Map<String, dynamic> item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookingManagementScreen(
+          providerId: _providerId ?? '',
+          itemId: item['id'] ?? '',
+          itemName: item['name'] ?? 'العنصر',
+        ),
+      ),
+    ).then((_) => _loadProviderData());
+  }
+
+  void _editProfessionalItem(Map<String, dynamic> item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ItemEditScreen(item: item)),
+    ).then((_) => _loadProviderData());
+  }
+
+  void _confirmDeleteItem(Map<String, dynamic> item) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red),
+            SizedBox(width: 8),
+            Text('تأكيد الحذف'),
+          ],
+        ),
+        content: Text(
+          'هل أنت متأكد من حذف "${item['name'] ?? 'هذا العنصر'}"؟\nلا يمكن التراجع عن هذا الإجراء.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteItem(item);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _deleteItem(Map<String, dynamic> item) async {
+    try {
+      print('🗑️ بدء حذف العنصر: ${item['name']}');
+      print('🆔 معرف العنصر: ${item['id']}');
+      print('📦 providerId: ${item['providerId']}');
+      print('🏷️ serviceType: ${item['serviceType']}');
+      print('📁 category: ${item['category']}');
+
+      // التحقق من وجود معرف العنصر
+      if (item['id'] == null || item['id'].toString().isEmpty) {
+        print('❌ خطأ: معرف العنصر غير موجود!');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('خطأ: معرف العنصر غير موجود'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      // 1. حذف من provider_items
+      print('🗑️ خطوة 1: حذف من provider_items...');
+      await FirebaseFirestore.instance
+          .collection('provider_items')
+          .doc(item['id'])
+          .delete();
+      print('✅ تم الحذف من provider_items بنجاح');
+
+      // 2. حذف من المجموعة الأصلية
+      print('🗑️ خطوة 2: تحديد المجموعة الأصلية...');
+      String category = item['category']?.toString() ?? '';
+      String serviceType = item['serviceType']?.toString() ?? '';
+
+      print('📋 category من العنصر: "$category"');
+      print('🏷️ serviceType من العنصر: "$serviceType"');
+
+      // خريطة لتحويل serviceType العربي إلى category
+      Map<String, String> arabicToCategory = {
+        'مطعم': 'restaurant',
+        'مطاعم': 'restaurant',
+        'قاعات اعراس': 'hall',
+        'قاعة عرس': 'hall',
+        'فنادق': 'hotel',
+        'فندق': 'hotel',
+        'كيك': 'cake',
+        'تأجير سيارات': 'car',
+        'سيارات': 'car',
+        'ورود': 'flowers',
+        'تصوير': 'photography',
+        'جلسات تصوير': 'photography',
+        'صالونات تجميل': 'salon_care',
+        'صالون': 'salon_care',
+        'شهر عسل': 'honeymoon',
+        'فساتين زفاف': 'bride_dress',
+        'فساتين': 'bride_dress',
+        'بدلات رجالية': 'groom_suit',
+        'بدلات': 'groom_suit',
+        'تزيين السيارات': 'car_decoration',
+        'تزيين سيارة': 'car_decoration',
+      };
+
+      if (category.isEmpty && arabicToCategory.containsKey(serviceType)) {
+        category = arabicToCategory[serviceType]!;
+        print('✅ تم تحويل serviceType "$serviceType" إلى category "$category"');
+      }
+
+      print('📁 الـ category النهائي: "$category"');
+
+      Map<String, String> categoryToCollection = {
+        'hall': 'hall',
+        'hotel': 'hotel',
+        'cake': 'cake',
+        'restaurant': 'restaurant',
+        'car': 'car',
+        'flowers': 'flowers',
+        'photography': 'photography',
+        'salon_care': 'salon_care',
+        'honeymoon': 'honeymoon',
+        'bride_dress': 'bride_dress',
+        'groom_suit': 'groom_suit',
+        'car_decoration': 'car_decoration',
+      };
+
+      String originalCollection = categoryToCollection[category] ?? '';
+      print('🗂️ اسم المجموعة الأصلية: "$originalCollection"');
+
+      if (originalCollection.isNotEmpty) {
+        print('🗑️ خطوة 2: حذف من المجموعة الأصلية $originalCollection...');
+        final providerId = item['providerId']?.toString() ?? '';
+        final itemName = item['name']?.toString() ?? '';
+
+        print('🔍 البحث بـ providerId: "$providerId", name: "$itemName"');
+
+        if (providerId.isNotEmpty && itemName.isNotEmpty) {
+          var query = await FirebaseFirestore.instance
+              .collection(originalCollection)
+              .where('providerId', isEqualTo: providerId)
+              .where('name', isEqualTo: itemName)
+              .get();
+
+          print(
+            '📊 تم العثور على ${query.docs.length} عنصر في $originalCollection',
+          );
+
+          for (var doc in query.docs) {
+            await FirebaseFirestore.instance
+                .collection(originalCollection)
+                .doc(doc.id)
+                .delete();
+            print('✅ تم الحذف من $originalCollection (ID: ${doc.id})');
+          }
+        } else {
+          print('⚠️ providerId أو itemName فارغ!');
+        }
+      } else {
+        print('⚠️ لم يتم تحديد المجموعة الأصلية (category فارغ أو غير معروف)');
+      }
+
+      // 3. حذف من published_items
+      print('🗑️ خطوة 3: حذف من published_items...');
+      try {
+        final providerId = item['providerId']?.toString() ?? '';
+        final itemName = item['name']?.toString() ?? '';
+
+        print(
+          '🔍 البحث في published_items بـ providerId: "$providerId", name: "$itemName"',
+        );
+
+        if (providerId.isNotEmpty && itemName.isNotEmpty) {
+          var publishedQuery = await FirebaseFirestore.instance
+              .collection('published_items')
+              .where('providerId', isEqualTo: providerId)
+              .where('name', isEqualTo: itemName)
+              .get();
+
+          print(
+            '📊 تم العثور على ${publishedQuery.docs.length} عنصر في published_items',
+          );
+
+          for (var doc in publishedQuery.docs) {
+            await FirebaseFirestore.instance
+                .collection('published_items')
+                .doc(doc.id)
+                .delete();
+            print('✅ تم الحذف من published_items (ID: ${doc.id})');
+          }
+        }
+      } catch (e) {
+        print('ℹ️ خطأ أو لم يتم العثور على العنصر في published_items: $e');
+      }
+
+      print('🎉 اكتمل الحذف من جميع المجموعات، جاري تحديث الواجهة...');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ تم حذف العنصر بنجاح من جميع المجموعات'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _loadProviderData();
+        print('✅ تم تحديث واجهة المستخدم');
+      }
+    } catch (e) {
+      print('❌ خطأ في الحذف: $e');
+      print('❌ Stack trace: ${StackTrace.current}');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في حذف العنصر: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}

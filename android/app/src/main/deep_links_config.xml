@@ -1,0 +1,125 @@
+<!-- 
+  إضافة هذا الكود إلى ملف android/app/src/main/AndroidManifest.xml
+  داخل <activity> الرئيسية (MainActivity)
+-->
+
+<!-- ======================== -->
+<!-- Deep Link Configuration  -->
+<!-- ======================== -->
+
+<!-- 1. Deep Link Scheme (zafa://) - يعمل بدون إنترنت -->
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    
+    <!-- مسارات العناصر -->
+    <data
+        android:scheme="zafa"
+        android:host="item" />
+    
+    <!-- مسارات المزودين -->
+    <data
+        android:scheme="zafa"
+        android:host="provider" />
+    
+    <!-- مسارات الحجوزات -->
+    <data
+        android:scheme="zafa"
+        android:host="booking" />
+</intent-filter>
+
+<!-- 2. App Links (https://zafaapp.com) - يتطلب التحقق من الدومين -->
+<intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    
+    <!-- جميع المسارات على نفس الدومين -->
+    <data
+        android:scheme="https"
+        android:host="zafaapp.com" />
+    
+    <!-- يمكنك تحديد مسارات معينة -->
+    <!-- 
+    <data
+        android:scheme="https"
+        android:host="zafaapp.com"
+        android:pathPrefix="/item" />
+    <data
+        android:scheme="https"
+        android:host="zafaapp.com"
+        android:pathPrefix="/provider" />
+    <data
+        android:scheme="https"
+        android:host="zafaapp.com"
+        android:pathPrefix="/booking" />
+    -->
+</intent-filter>
+
+<!-- ======================== -->
+<!-- مثال كامل للـ activity   -->
+<!-- ======================== -->
+
+<!--
+<activity
+    android:name=".MainActivity"
+    android:exported="true"
+    android:launchMode="singleTop"
+    android:theme="@style/LaunchTheme"
+    android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+    android:hardwareAccelerated="true"
+    android:windowSoftInputMode="adjustResize">
+    
+    <!- - Main Launcher - ->
+    <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+    </intent-filter>
+    
+    <!- - Deep Links - ->
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        
+        <data android:scheme="zafa" android:host="item" />
+        <data android:scheme="zafa" android:host="provider" />
+        <data android:scheme="zafa" android:host="booking" />
+    </intent-filter>
+    
+    <!- - App Links - ->
+    <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        
+        <data android:scheme="https" android:host="zafaapp.com" />
+    </intent-filter>
+    
+</activity>
+-->
+
+<!-- ======================== -->
+<!-- ملاحظات مهمة             -->
+<!-- ======================== -->
+
+<!--
+1. android:autoVerify="true" 
+   - يجعل Android يتحقق تلقائياً من ملف assetlinks.json
+   - يتطلب رفع ملف على https://zafaapp.com/.well-known/assetlinks.json
+
+2. android:launchMode="singleTop"
+   - يمنع إنشاء نسخة جديدة من Activity عند فتح Deep Link
+   - يستدعي onNewIntent() بدلاً من onCreate()
+
+3. android:exported="true"
+   - مطلوب لـ Android 12+ للسماح بفتح Activity من خارج التطبيق
+
+4. استبدال الدومين:
+   - استبدل "zafaapp.com" بالدومين الفعلي لموقعك
+   - يجب أن يكون HTTPS فقط (ليس HTTP)
+
+5. اختبار Deep Links:
+   adb shell am start -W -a android.intent.action.VIEW -d "zafa://item/abc123" com.zafa.app
+-->

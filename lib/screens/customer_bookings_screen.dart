@@ -1,0 +1,1059 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import '../models/booking_model.dart';
+import '../services/booking_service.dart';
+import '../services/rating_service.dart';
+import '../widgets/add_rating_dialog.dart';
+
+/// شاشة عرض حجوزات الزبون
+class CustomerBookingsScreen extends StatefulWidget {
+  const CustomerBookingsScreen({super.key});
+
+  @override
+  State<CustomerBookingsScreen> createState() => _CustomerBookingsScreenState();
+}
+
+class _CustomerBookingsScreenState extends State<CustomerBookingsScreen> {
+  final BookingService _bookingService = BookingService();
+  final RatingService _ratingService = RatingService();
+  final currentUser = FirebaseAuth.instance.currentUser;
+
+  @override
+  Widget build(BuildContext context) {
+    if (currentUser == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('حجوزاتي'),
+          backgroundColor: const Color(0xFF8B0000),
+          foregroundColor: Colors.white,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.person_off, size: 80, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              Text(
+                'يرجى تسجيل الدخول لعرض حجوزاتك',
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('حجوزاتي'),
+        backgroundColor: const Color(0xFF8B0000),
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: () => _showBookingLegend(),
+            tooltip: 'معلومات',
+          ),
+        ],
+      ),
+      body: StreamBuilder<List<BookingModel>>(
+        stream: _bookingService.getCustomerBookings(currentUser!.uid),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF8B0000)),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red.shade300,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'خطأ في تحميل الحجوزات',
+                    style: TextStyle(fontSize: 18, color: Colors.grey.shade700),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    snapshot.error.toString(),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final bookings = snapshot.data ?? [];
+
+          if (bookings.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.event_busy, size: 80, color: Colors.grey.shade300),
+                  const SizedBox(height: 16),
+                  Text(
+                    'لا توجد حجوزات حالياً',
+                    style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'ابدأ بحجز خدماتك المفضلة',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          // تقسيم الحجوزات إلى نشطة وملغاة
+          final activeBookings = bookings.where((b) => !b.isCancelled).toList();
+          final cancelledBookings = bookings
+              .where((b) => b.isCancelled)
+              .toList();
+
+          return DefaultTabController(
+            length: 2,
+            child: Column(
+              children: [
+                Container(
+                  color: Colors.white,
+                  child: TabBar(
+                    labelColor: const Color(0xFF8B0000),
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: const Color(0xFF8B0000),
+                    tabs: [
+                      Tab(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.event_available),
+                            const SizedBox(width: 8),
+                            Text('نشطة (${activeBookings.length})'),
+                          ],
+                        ),
+                      ),
+                      Tab(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.event_busy),
+                            const SizedBox(width: 8),
+                            Text('ملغاة (${cancelledBookings.length})'),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildBookingsList(activeBookings, isActive: true),
+                      _buildBookingsList(cancelledBookings, isActive: false),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBookingsList(
+    List<BookingModel> bookings, {
+    required bool isActive,
+  }) {
+    if (bookings.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isActive ? Icons.event_available : Icons.event_busy,
+              size: 64,
+              color: Colors.grey.shade300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isActive ? 'لا توجد حجوزات نشطة' : 'لا توجد حجوزات ملغاة',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: bookings.length,
+      itemBuilder: (context, index) {
+        final booking = bookings[index];
+        return _buildBookingCard(booking, isActive: isActive);
+      },
+    );
+  }
+
+  Widget _buildBookingCard(BookingModel booking, {required bool isActive}) {
+    final formattedDate = DateFormat(
+      'EEEE، dd MMMM yyyy',
+      'ar',
+    ).format(booking.bookingDate);
+    // تحديد إذا كان التاريخ ماضي (قبل اليوم، وليس اليوم نفسه)
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final bookingDay = DateTime(
+      booking.bookingDate.year,
+      booking.bookingDate.month,
+      booking.bookingDate.day,
+    );
+    final isPastDate = bookingDay.isBefore(today);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: () => _showBookingDetails(booking),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // العنوان والحالة
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          booking.itemName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2D3748),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          booking.providerName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildStatusChip(booking, isPastDate),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+              const Divider(),
+              const SizedBox(height: 12),
+
+              // التاريخ
+              Row(
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    size: 18,
+                    color: Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      formattedDate,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // الوقت (إذا كان حجز جزئي)
+              if (booking.timeSlot != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      size: 18,
+                      color: Colors.grey.shade600,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${booking.timeSlot!.startTime} - ${booking.timeSlot!.endTime}',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.event, size: 18, color: Colors.grey.shade600),
+                    const SizedBox(width: 8),
+                    Text(
+                      'حجز اليوم كامل',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              // الملاحظات
+              if (booking.notes != null && booking.notes!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.note, size: 16, color: Colors.blue.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          booking.notes!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blue.shade900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // أزرار التعديل والإلغاء (للحجوزات النشطة فقط)
+              if (isActive && !isPastDate) ...[
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    // زر التعديل
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _showModifyBookingDialog(booking),
+                        icon: const Icon(Icons.edit),
+                        label: const Text('تعديل'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.blue,
+                          side: const BorderSide(color: Colors.blue),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    // زر الإلغاء
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _confirmCancelBooking(booking),
+                        icon: const Icon(Icons.cancel),
+                        label: const Text('إلغاء'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.red,
+                          side: const BorderSide(color: Colors.red),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+
+              // زر التقييم (للحجوزات المنتهية فقط)
+              if (isActive && isPastDate) ...[
+                const SizedBox(height: 16),
+                FutureBuilder<bool>(
+                  future: _ratingService.canRateBooking(
+                    booking.id!,
+                    currentUser!.uid,
+                  ),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox.shrink();
+                    }
+
+                    final canRate = snapshot.data!;
+
+                    if (canRate) {
+                      return SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _showRatingDialog(booking),
+                          icon: const Icon(Icons.star),
+                          label: const Text('تقييم الخدمة'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF8B0000),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      );
+                    } else {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade200),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              color: Colors.green.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'تم التقييم',
+                              style: TextStyle(
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(BookingModel booking, bool isPastDate) {
+    String label;
+    Color color;
+
+    if (booking.isCancelled) {
+      label = 'ملغى';
+      color = Colors.grey;
+    } else if (isPastDate) {
+      label = 'منتهي';
+      color = Colors.orange;
+    } else {
+      // نشط يشمل الحجوزات الحالية (اليوم) والمستقبلية
+      label = 'نشط';
+      color = Colors.green;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  void _showBookingDetails(BookingModel booking) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تفاصيل الحجز', textAlign: TextAlign.right),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDetailRow('الخدمة', booking.itemName),
+              _buildDetailRow('المزود', booking.providerName),
+              _buildDetailRow(
+                'التاريخ',
+                DateFormat('dd/MM/yyyy').format(booking.bookingDate),
+              ),
+              if (booking.timeSlot != null)
+                _buildDetailRow(
+                  'الوقت',
+                  '${booking.timeSlot!.startTime} - ${booking.timeSlot!.endTime}',
+                )
+              else
+                _buildDetailRow('النوع', 'حجز يوم كامل'),
+              _buildDetailRow(
+                'تاريخ الإنشاء',
+                DateFormat('dd/MM/yyyy HH:mm').format(booking.createdAt),
+              ),
+              if (booking.isCancelled) ...[
+                const Divider(),
+                _buildDetailRow('الحالة', 'ملغى'),
+                if (booking.cancelledAt != null)
+                  _buildDetailRow(
+                    'تاريخ الإلغاء',
+                    DateFormat('dd/MM/yyyy HH:mm').format(booking.cancelledAt!),
+                  ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(color: Color(0xFF2D3748)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmCancelBooking(BookingModel booking) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد الإلغاء', textAlign: TextAlign.right),
+        content: const Text(
+          'هل أنت متأكد من إلغاء هذا الحجز؟\nلا يمكن التراجع عن هذا الإجراء.',
+          textAlign: TextAlign.right,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('لا'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('نعم، إلغاء الحجز'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && currentUser != null) {
+      try {
+        await _bookingService.cancelBooking(booking.id!, currentUser!.uid);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم إلغاء الحجز بنجاح'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('خطأ في إلغاء الحجز: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  void _showBookingLegend() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('معلومات الحجوزات', textAlign: TextAlign.right),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildLegendItem(
+              Icons.check_circle,
+              'نشط',
+              'حجز نشط ومؤكد',
+              Colors.green,
+            ),
+            const SizedBox(height: 12),
+            _buildLegendItem(
+              Icons.access_time,
+              'منتهي',
+              'تاريخ الحجز قد مضى',
+              Colors.orange,
+            ),
+            const SizedBox(height: 12),
+            _buildLegendItem(
+              Icons.cancel,
+              'ملغى',
+              'تم إلغاء الحجز',
+              Colors.grey,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(
+    IconData icon,
+    String title,
+    String description,
+    Color color,
+  ) {
+    return Row(
+      children: [
+        Icon(icon, color: color),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(fontWeight: FontWeight.bold, color: color),
+              ),
+              Text(
+                description,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showRatingDialog(BookingModel booking) async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AddRatingDialog(
+        bookingId: booking.id!,
+        itemId: booking.itemId,
+        itemName: booking.itemName,
+        providerId: booking.providerId,
+        customerId: currentUser!.uid,
+        customerName: booking.customerName,
+      ),
+    );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('شكراً لتقييمك! تم إضافة التقييم بنجاح'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      // تحديث الواجهة
+      setState(() {});
+    }
+  }
+
+  Future<void> _showModifyBookingDialog(BookingModel booking) async {
+    // التحقق من أن الحجز لم يُعدّل مسبقاً
+    final bookingDoc = await FirebaseFirestore.instance
+        .collection('bookings')
+        .doc(booking.id)
+        .get();
+
+    if (bookingDoc.data()?['isModified'] == true) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تعديل هذا الحجز مسبقاً. يُسمح بتعديل واحد فقط'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+
+    DateTime? newDate;
+    TimeOfDay? newStartTime;
+    TimeOfDay? newEndTime;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('تعديل الحجز'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'الحجز الحالي:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'التاريخ: ${DateFormat('dd/MM/yyyy').format(booking.bookingDate)}',
+                  ),
+                  if (booking.timeSlot != null)
+                    Text(
+                      'الوقت: ${booking.timeSlot!.startTime} - ${booking.timeSlot!.endTime}',
+                    ),
+                  const Divider(height: 24),
+
+                  // زر عرض الأوقات المحجوزة
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _showBookedTimesDialog(
+                        booking.itemId,
+                        booking.providerId,
+                      );
+                    },
+                    icon: const Icon(Icons.calendar_month),
+                    label: const Text('عرض الأوقات المحجوزة'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 45),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // اختيار تاريخ جديد
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: booking.bookingDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                        locale: const Locale('ar'),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => newDate = picked);
+                      }
+                    },
+                    icon: const Icon(Icons.calendar_today),
+                    label: Text(
+                      newDate != null
+                          ? 'التاريخ الجديد: ${DateFormat('dd/MM/yyyy').format(newDate!)}'
+                          : 'اختر تاريخاً جديداً',
+                    ),
+                  ),
+
+                  // إذا كان حجز جزئي، اختر أوقات جديدة
+                  if (booking.timeSlot != null) ...[
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.now(),
+                        );
+                        if (picked != null) {
+                          setDialogState(() => newStartTime = picked);
+                        }
+                      },
+                      icon: const Icon(Icons.access_time),
+                      label: Text(
+                        newStartTime != null
+                            ? 'وقت البداية: ${newStartTime!.format(context)}'
+                            : 'اختر وقت البداية',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.now(),
+                        );
+                        if (picked != null) {
+                          setDialogState(() => newEndTime = picked);
+                        }
+                      },
+                      icon: const Icon(Icons.access_time),
+                      label: Text(
+                        newEndTime != null
+                            ? 'وقت النهاية: ${newEndTime!.format(context)}'
+                            : 'اختر وقت النهاية',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('إلغاء'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (newDate == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('يرجى اختيار تاريخ جديد'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    return;
+                  }
+
+                  TimeSlot? newTimeSlot;
+                  if (booking.timeSlot != null) {
+                    if (newStartTime == null || newEndTime == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('يرجى اختيار الأوقات الجديدة'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                      return;
+                    }
+                    newTimeSlot = TimeSlot(
+                      startTime:
+                          '${newStartTime!.hour.toString().padLeft(2, '0')}:${newStartTime!.minute.toString().padLeft(2, '0')}',
+                      endTime:
+                          '${newEndTime!.hour.toString().padLeft(2, '0')}:${newEndTime!.minute.toString().padLeft(2, '0')}',
+                    );
+                  }
+
+                  Navigator.pop(context, {
+                    'newDate': newDate,
+                    'newTimeSlot': newTimeSlot,
+                  });
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8B0000),
+                ),
+                child: const Text('تأكيد التعديل'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (result != null && mounted) {
+      try {
+        await _bookingService.updateBooking(
+          bookingId: booking.id!,
+          newDate: result['newDate'],
+          newTimeSlot: result['newTimeSlot'],
+          itemId: booking.itemId,
+          customerId: currentUser!.uid,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ تم تعديل الحجز بنجاح'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('خطأ: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  // دالة عرض الأوقات المحجوزة للعنصر
+  Future<void> _showBookedTimesDialog(String itemId, String providerId) async {
+    try {
+      // جلب جميع الحجوزات للعنصر
+      final bookingsSnapshot = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('itemId', isEqualTo: itemId)
+          .where('providerId', isEqualTo: providerId)
+          .where('isCancelled', isEqualTo: false)
+          .orderBy('bookingDate')
+          .get();
+
+      final bookedTimes = <String, List<String>>{};
+
+      for (var doc in bookingsSnapshot.docs) {
+        final data = doc.data();
+        final bookingDate = (data['bookingDate'] as Timestamp).toDate();
+        final dateString = DateFormat('yyyy-MM-dd').format(bookingDate);
+
+        if (data['isFullDay'] == true) {
+          bookedTimes[dateString] = ['اليوم كامل محجوز'];
+        } else if (data['timeSlot'] != null) {
+          final timeSlot = data['timeSlot'] as Map<String, dynamic>;
+          final timeString =
+              '${timeSlot['startTime']} - ${timeSlot['endTime']}';
+
+          if (bookedTimes.containsKey(dateString)) {
+            bookedTimes[dateString]!.add(timeString);
+          } else {
+            bookedTimes[dateString] = [timeString];
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text(
+            'الأوقات المحجوزة',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: bookedTimes.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text(
+                      'لا توجد حجوزات حالياً',
+                      style: TextStyle(fontSize: 16),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: bookedTimes.length,
+                    itemBuilder: (context, index) {
+                      final dateString = bookedTimes.keys.elementAt(index);
+                      final times = bookedTimes[dateString]!;
+                      final date = DateTime.parse(dateString);
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        elevation: 2,
+                        child: ExpansionTile(
+                          leading: const Icon(
+                            Icons.calendar_today,
+                            color: Color(0xFF8B0000),
+                          ),
+                          title: Text(
+                            DateFormat('EEEE، dd MMMM yyyy', 'ar').format(date),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          children: times
+                              .map(
+                                (time) => ListTile(
+                                  dense: true,
+                                  leading: const Icon(
+                                    Icons.access_time,
+                                    size: 18,
+                                    color: Colors.orange,
+                                  ),
+                                  title: Text(time),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إغلاق'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('خطأ في جلب الأوقات المحجوزة: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+}

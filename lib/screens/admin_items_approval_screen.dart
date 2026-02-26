@@ -1,0 +1,543 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class AdminItemsApprovalScreen extends StatefulWidget {
+  const AdminItemsApprovalScreen({super.key});
+
+  @override
+  State<AdminItemsApprovalScreen> createState() =>
+      _AdminItemsApprovalScreenState();
+}
+
+class _AdminItemsApprovalScreenState extends State<AdminItemsApprovalScreen> {
+  final List<String> _serviceTypes = [
+    'hall',
+    'hotel',
+    'cake',
+    'restaurant',
+    'bride_dress',
+    'salon_care',
+    'flowers',
+    'groom_suit',
+    'car',
+    'car_decoration',
+    'honeymoon',
+  ];
+
+  final Map<String, String> _serviceNames = {
+    'hall': 'قاعات الأعراس',
+    'hotel': 'الفنادق',
+    'cake': 'الكيك',
+    'restaurant': 'المطاعم',
+    'bride_dress': 'فساتين العروس',
+    'salon_care': 'العناية والتجميل',
+    'flowers': 'الزهور',
+    'groom_suit': 'بدل الرجال',
+    'car': 'السيارات',
+    'car_decoration': 'تزيين السيارات',
+    'honeymoon': 'شهر العسل',
+  };
+
+  // جلب العناصر في انتظار الموافقة
+  Stream<List<Map<String, dynamic>>> _getPendingItems() {
+    return Stream.fromFuture(_fetchPendingItems());
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPendingItems() async {
+    List<Map<String, dynamic>> allPendingItems = [];
+
+    for (String serviceType in _serviceTypes) {
+      try {
+        final query = await FirebaseFirestore.instance
+            .collection(serviceType)
+            .where('status', isEqualTo: 'pending')
+            .orderBy('createdAt', descending: true)
+            .get();
+
+        for (var doc in query.docs) {
+          final data = doc.data();
+          data['id'] = doc.id;
+          data['serviceType'] = serviceType;
+          data['serviceTypeName'] = _serviceNames[serviceType] ?? serviceType;
+          allPendingItems.add(data);
+        }
+      } catch (e) {
+        print('خطأ في جلب البيانات من $serviceType: $e');
+      }
+    }
+
+    // ترتيب حسب تاريخ الإنشاء
+    allPendingItems.sort((a, b) {
+      final aTime = a['createdAt'] as Timestamp?;
+      final bTime = b['createdAt'] as Timestamp?;
+      if (aTime == null || bTime == null) return 0;
+      return bTime.compareTo(aTime);
+    });
+
+    return allPendingItems;
+  }
+
+  // موافقة على العنصر
+  Future<void> _approveItem(Map<String, dynamic> item) async {
+    try {
+      final updateData = {
+        'status': 'active',
+        'approvedAt': FieldValue.serverTimestamp(),
+        'approvedBy': 'admin',
+      };
+
+      // تحديث في المجموعة الأصلية
+      await FirebaseFirestore.instance
+          .collection(item['serviceType'])
+          .doc(item['id'])
+          .update(updateData);
+
+      // تحديث في provider_items أيضاً إذا كان العنصر موجوداً هناك
+      final providerId = item['providerId']?.toString();
+      if (providerId != null && providerId.isNotEmpty) {
+        // البحث عن العنصر في provider_items
+        final providerItemsQuery = await FirebaseFirestore.instance
+            .collection('provider_items')
+            .where('providerId', isEqualTo: providerId)
+            .where('name', isEqualTo: item['name'])
+            .get();
+
+        // تحديث جميع النسخ المطابقة
+        for (var doc in providerItemsQuery.docs) {
+          await doc.reference.update(updateData);
+        }
+
+        print(
+          '✅ تم تحديث ${providerItemsQuery.docs.length} عنصر في provider_items',
+        );
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم قبول "${item['name']}" بنجاح'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      setState(() {}); // إعادة تحميل البيانات
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // رفض العنصر
+  Future<void> _rejectItem(Map<String, dynamic> item) async {
+    try {
+      final updateData = {
+        'status': 'rejected',
+        'rejectedAt': FieldValue.serverTimestamp(),
+        'rejectedBy': 'admin',
+      };
+
+      // تحديث في المجموعة الأصلية
+      await FirebaseFirestore.instance
+          .collection(item['serviceType'])
+          .doc(item['id'])
+          .update(updateData);
+
+      // تحديث في provider_items أيضاً إذا كان العنصر موجوداً هناك
+      final providerId = item['providerId']?.toString();
+      if (providerId != null && providerId.isNotEmpty) {
+        // البحث عن العنصر في provider_items
+        final providerItemsQuery = await FirebaseFirestore.instance
+            .collection('provider_items')
+            .where('providerId', isEqualTo: providerId)
+            .where('name', isEqualTo: item['name'])
+            .get();
+
+        // تحديث جميع النسخ المطابقة
+        for (var doc in providerItemsQuery.docs) {
+          await doc.reference.update(updateData);
+        }
+
+        print(
+          '✅ تم تحديث ${providerItemsQuery.docs.length} عنصر في provider_items',
+        );
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم رفض "${item['name']}" وحذفه'),
+          backgroundColor: Colors.red,
+        ),
+      );
+
+      setState(() {}); // إعادة تحميل البيانات
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'موافقة على العناصر الجديدة',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF1E88E5),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      backgroundColor: Color(0xFFF5F7FA),
+      body: StreamBuilder<List<Map<String, dynamic>>>(
+        stream: _getPendingItems(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFF1E88E5)),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(
+                    'حدث خطأ في تحميل البيانات',
+                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                  ),
+                  SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => setState(() {}),
+                    child: Text('retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final pendingItems = snapshot.data ?? [];
+
+          if (pendingItems.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 80,
+                    color: Colors.green[400],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'لا توجد عناصر في انتظار الموافقة',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'جميع العناصر الجديدة تم مراجعتها',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: pendingItems.length,
+            addAutomaticKeepAlives: false,
+            addRepaintBoundaries: true,
+            cacheExtent: 200,
+            itemBuilder: (context, index) {
+              final item = pendingItems[index];
+              final name = item['name'] ?? 'غير محدد';
+              final details = item['details'] ?? '';
+              final price = item['price'] ?? 'غير محدد';
+              final providerName = item['providerName'] ?? 'غير محدد';
+              final serviceTypeName = item['serviceTypeName'] ?? '';
+              final imageUrls = item['imageUrls'] as List<dynamic>? ?? [];
+              final createdAt = item['createdAt'] as Timestamp?;
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // صورة العنصر مع شارة الانتظار
+                    Stack(
+                      children: [
+                        if (imageUrls.isNotEmpty)
+                          ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(16),
+                            ),
+                            child: Image.network(
+                              imageUrls[0],
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  height: 200,
+                                  color: Colors.grey[200],
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.broken_image,
+                                      size: 50,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          )
+                        else
+                          Container(
+                            height: 200,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(16),
+                              ),
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.image_not_supported,
+                                size: 50,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ),
+
+                        // شارة الانتظار
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Text(
+                              'في انتظار الموافقة',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // نوع الخدمة
+                        Positioned(
+                          top: 12,
+                          right: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E88E5),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              serviceTypeName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // تفاصيل العنصر
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'مقدم الخدمة: $providerName',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (details.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              details,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '$price ريال',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E88E5),
+                                ),
+                              ),
+                              if (createdAt != null)
+                                Text(
+                                  'تاريخ الإضافة: ${createdAt.toDate().day}/${createdAt.toDate().month}/${createdAt.toDate().year}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          // أزرار الموافقة والرفض
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('قبول العنصر'),
+                                        content: Text(
+                                          'هل أنت متأكد من قبول "$name"؟\n\nسيصبح العنصر مرئياً للعملاء.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(
+                                              context,
+                                            ).pop(false),
+                                            child: Text('cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () =>
+                                                Navigator.of(context).pop(true),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.green,
+                                            ),
+                                            child: const Text('قبول'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirm == true) {
+                                      await _approveItem(item);
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.check, size: 18),
+                                  label: const Text('قبول'),
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () async {
+                                    final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text('رفض العنصر'),
+                                        content: Text(
+                                          'هل أنت متأكد من رفض "$name"؟\n\nسيتم حذف العنصر نهائياً.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.of(
+                                              context,
+                                            ).pop(false),
+                                            child: Text('cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () =>
+                                                Navigator.of(context).pop(true),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                            ),
+                                            child: Text('reject'),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+
+                                    if (confirm == true) {
+                                      await _rejectItem(item);
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  icon: Icon(Icons.close, size: 18),
+                                  label: Text('reject'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}

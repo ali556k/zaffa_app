@@ -1,0 +1,591 @@
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:table_calendar/table_calendar.dart';
+import 'dart:io';
+
+// شاشة نموذج إضافة/تعديل الخدمة
+class ServiceFormScreen extends StatefulWidget {
+  final bool isInitial;
+  final Map<String, dynamic>? existingService;
+  final Function(Map<String, dynamic>) onSubmit;
+
+  const ServiceFormScreen({
+    super.key,
+    required this.isInitial,
+    this.existingService,
+    required this.onSubmit,
+  });
+
+  @override
+  State<ServiceFormScreen> createState() => _ServiceFormScreenState();
+}
+
+class _ServiceFormScreenState extends State<ServiceFormScreen> {
+  final nameController = TextEditingController();
+  final descriptionController = TextEditingController();
+  final priceController = TextEditingController();
+  final governorateController = TextEditingController();
+  List<String> images = [];
+  bool isLoading = false;
+
+  // تم إزالة قائمة أنواع الخدمات حسب الطلب
+
+  final List<String> iraqGovernorates = [
+    'بغداد','البصرة','نينوى','أربيل','الأنبار','ذي قار','السليمانية','بابل',
+    'ديالى','كركوك','النجف','صلاح الدين','القادسية','واسط','ميسان','المثنى','دهوك','كربلاء',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingService != null) {
+      final service = widget.existingService!;
+      nameController.text = service['name'] ?? '';
+      descriptionController.text = service['description'] ?? '';
+      priceController.text = service['price']?.toString() ?? '';
+      governorateController.text = service['governorate'] ?? '';
+      images = List<String>.from(service['images'] ?? []);
+    }
+  }
+
+  Future<void> pickImages() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickMultiImage();
+    if (picked.length >= 3) {
+      setState(() {
+        images = picked.map((e) => e.path).toList();
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('يجب رفع 3 صور على الأقل'))
+      );
+    }
+  }
+
+  Future<List<String>> uploadImages() async {
+    List<String> imageUrls = [];
+    for (int i = 0; i < images.length; i++) {
+      String imagePath = images[i];
+      if (imagePath.startsWith('http')) {
+        // إذا كانت الصورة من Firebase بالفعل
+        imageUrls.add(imagePath);
+      } else {
+        // رفع صورة جديدة
+        try {
+          final ref = FirebaseStorage.instance.ref()
+              .child('service_images/${DateTime.now().millisecondsSinceEpoch}_$i.jpg');
+          await ref.putFile(File(imagePath));
+          String downloadUrl = await ref.getDownloadURL();
+          imageUrls.add(downloadUrl);
+        } catch (e) {
+          print('Error uploading image: $e');
+        }
+      }
+    }
+    return imageUrls;
+  }
+
+  Future<void> submitService() async {
+    if (nameController.text.isEmpty || descriptionController.text.isEmpty ||
+        priceController.text.isEmpty || images.length < 3 || governorateController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('يرجى إدخال جميع الحقول المطلوبة'))
+      );
+      return;
+    }
+
+    setState(() { isLoading = true; });
+
+    try {
+      List<String> imageUrls = await uploadImages();
+
+      final serviceData = {
+        'name': nameController.text.trim(),
+        'description': descriptionController.text.trim(),
+        'price': double.tryParse(priceController.text) ?? 0,
+        'governorate': governorateController.text.trim(),
+        'images': imageUrls,
+      };
+
+      await widget.onSubmit(serviceData);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ: $e'))
+      );
+    } finally {
+      setState(() { isLoading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.existingService != null ? 'تعديل الخدمة' : 
+                   widget.isInitial ? 'إضافة خدمة جديدة' : 'إضافة خدمة'),
+      ),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.isInitial) ...[
+              Text(
+                'مرحباً بك كمزود خدمة!',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFFB46A6A)),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'يرجى إضافة خدمة واحدة على الأقل لبدء العمل. سيتم إرسال طلبك للمالك للموافقة.',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+              SizedBox(height: 20),
+            ],
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(
+                labelText: 'اسم الخدمة *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: descriptionController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: 'وصف الخدمة *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 16),
+            TextField(
+              controller: priceController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'السعر (دينار) *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: iraqGovernorates.contains(governorateController.text) ? 
+                     governorateController.text : null,
+              items: iraqGovernorates.map((gov) => DropdownMenuItem(
+                value: gov,
+                child: Text(gov),
+              )).toList(),
+              onChanged: (val) => setState(() => governorateController.text = val ?? ''),
+              decoration: InputDecoration(
+                labelText: 'المحافظة *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 20),
+            Text('صور الخدمة (3 صور على الأقل)', style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            ElevatedButton.icon(
+              icon: Icon(Icons.add_photo_alternate),
+              label: Text('اختيار صور'),
+              onPressed: pickImages,
+            ),
+            SizedBox(height: 12),
+            if (images.isNotEmpty)
+              SizedBox(
+                height: 120,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: images.length,
+                  itemBuilder: (context, index) {
+                    String imagePath = images[index];
+                    return Container(
+                      margin: EdgeInsets.only(right: 8),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: imagePath.startsWith('http') ? 
+                              Image.network(imagePath, width: 100, height: 120, fit: BoxFit.cover) :
+                              Image.file(File(imagePath), width: 100, height: 120, fit: BoxFit.cover),
+                          ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  images.removeAt(index);
+                                });
+                              },
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.close, color: Colors.white, size: 20),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            SizedBox(height: 32),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : submitService,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFFB46A6A),
+                  foregroundColor: Colors.white,
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: isLoading ? 
+                  CircularProgressIndicator(color: Colors.white) : 
+                  Text(widget.isInitial ? 'إرسال للموافقة' : 'حفظ التعديلات'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// شاشة تقويم الحجوزات للخدمة
+class ServiceCalendarScreen extends StatefulWidget {
+  final String serviceId;
+  final String serviceName;
+
+  const ServiceCalendarScreen({
+    super.key,
+    required this.serviceId,
+    required this.serviceName,
+  });
+
+  @override
+  State<ServiceCalendarScreen> createState() => _ServiceCalendarScreenState();
+}
+
+class _ServiceCalendarScreenState extends State<ServiceCalendarScreen> {
+  DateTime focusedDay = DateTime.now();
+  DateTime? selectedDay;
+  List<String> bookedDates = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBookedDates();
+  }
+
+  Future<void> _loadBookedDates() async {
+    try {
+      final serviceDoc = await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .get();
+      
+      if (serviceDoc.exists) {
+        final data = serviceDoc.data() as Map<String, dynamic>;
+        bookedDates = List<String>.from(data['bookedDates'] ?? []);
+      }
+    } catch (e) {
+      print('Error loading booked dates: $e');
+    } finally {
+      setState(() { isLoading = false; });
+    }
+  }
+
+  bool isDateBooked(DateTime date) {
+    String dateString = "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+    return bookedDates.any((booking) => booking.startsWith(dateString));
+  }
+
+  List<String> getBookingsForDate(DateTime date) {
+    String dateString = "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+    return bookedDates.where((booking) => booking.startsWith(dateString)).toList();
+  }
+
+  Future<void> toggleDateBooking(DateTime date) async {
+    String dateString = "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+    
+    List<String> existingBookings = getBookingsForDate(date);
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('إدارة حجوزات ${date.day}/${date.month}/${date.year}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (existingBookings.isNotEmpty) ...[
+                Text('الحجوزات الحالية:', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 8),
+                ...existingBookings.map((booking) {
+                  String time = booking.contains('T') ? booking.split('T')[1] : 'طوال اليوم';
+                  return Card(
+                    child: ListTile(
+                      title: Text(time),
+                      trailing: IconButton(
+                        icon: Icon(Icons.delete, color: Colors.red),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _removeBooking(booking);
+                        },
+                      ),
+                    ),
+                  );
+                }),
+                SizedBox(height: 16),
+                Divider(),
+                SizedBox(height: 16),
+              ],
+              Text('إضافة حجز جديد:', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 12),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('cancel'.tr()),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _addFullDayBooking(dateString);
+            },
+            child: Text('حجز طوال اليوم'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showTimePickerDialog(dateString);
+            },
+            child: Text('حجز وقت محدد'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showTimePickerDialog(String dateString) async {
+    TimeOfDay? selectedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+
+    if (selectedTime != null) {
+      String timeString = "${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}";
+      String fullBooking = "${dateString}T$timeString";
+      
+      await _addDateTimeBooking(fullBooking);
+    }
+  }
+
+  Future<void> _addFullDayBooking(String dateString) async {
+    await _addDateTimeBooking(dateString);
+  }
+
+  Future<void> _addDateTimeBooking(String booking) async {
+    try {
+      setState(() { isLoading = true; });
+      
+      bookedDates.add(booking);
+
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .update({'bookedDates': bookedDates});
+
+      setState(() {});
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إضافة الحجز'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ: $e')),
+      );
+    } finally {
+      setState(() { isLoading = false; });
+    }
+  }
+
+  Future<void> _removeBooking(String booking) async {
+    try {
+      setState(() { isLoading = true; });
+      
+      bookedDates.remove(booking);
+
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .update({'bookedDates': bookedDates});
+
+      setState(() {});
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم إلغاء الحجز'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ: $e')),
+      );
+    } finally {
+      setState(() { isLoading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('تقويم ${widget.serviceName}'),
+      ),
+      body: isLoading 
+        ? Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              Container(
+                margin: EdgeInsets.all(16),
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info, color: Colors.blue[600]),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'انقر على أي تاريخ لإدارة الحجوزات. يمكنك حجز اليوم كاملاً أو أوقات محددة. التواريخ المحجوزة تظهر بنقطة حمراء.',
+                        style: TextStyle(color: Colors.blue[800]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: TableCalendar<String>(
+                  firstDay: DateTime.utc(2020, 1, 1),
+                  lastDay: DateTime.utc(2030, 12, 31),
+                  focusedDay: focusedDay,
+                  selectedDayPredicate: (day) {
+                    return isSameDay(selectedDay, day);
+                  },
+                  eventLoader: (day) {
+                    return isDateBooked(day) ? ['booked'] : [];
+                  },
+                  calendarBuilders: CalendarBuilders(
+                    markerBuilder: (context, day, events) {
+                      if (events.isNotEmpty) {
+                        return Positioned(
+                          bottom: 1,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            width: 8,
+                            height: 8,
+                          ),
+                        );
+                      }
+                      return null;
+                    },
+                  ),
+                  onDaySelected: (selectedDay, focusedDay) {
+                    if (!selectedDay.isBefore(DateTime.now().subtract(Duration(days: 1)))) {
+                      setState(() {
+                        this.selectedDay = selectedDay;
+                        this.focusedDay = focusedDay;
+                      });
+                      toggleDateBooking(selectedDay);
+                    }
+                  },
+                  onPageChanged: (focusedDay) {
+                    this.focusedDay = focusedDay;
+                  },
+                  calendarStyle: CalendarStyle(
+                    outsideDaysVisible: false,
+                    todayDecoration: BoxDecoration(
+                      color: Colors.blue[400],
+                      shape: BoxShape.circle,
+                    ),
+                    selectedDecoration: BoxDecoration(
+                      color: Color(0xFFB46A6A),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  headerStyle: HeaderStyle(
+                    formatButtonVisible: false,
+                    titleCentered: true,
+                  ),
+                ),
+              ),
+              Container(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text('محجوز'),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text('available'.tr()),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('إجمالي الحجوزات: ${bookedDates.length}', 
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('الأيام المحجوزة: ${bookedDates.map((b) => b.split('T')[0]).toSet().length}', 
+                          style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+    );
+  }
+}

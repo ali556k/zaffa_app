@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.com.zafa.app",
+        "paths": [
+          "/item/*",
+          "/provider/*",
+          "/booking/*"
+        ]
+      }
+    ]
+  }
+}

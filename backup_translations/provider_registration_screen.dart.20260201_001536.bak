@@ -1,0 +1,393 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart' hide TextDirection;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
+import 'provider_home_screen.dart';
+
+class ProviderRegistrationScreen extends StatefulWidget {
+  const ProviderRegistrationScreen({super.key});
+
+  @override
+  State<ProviderRegistrationScreen> createState() =>
+      _ProviderRegistrationScreenState();
+}
+
+class _ProviderRegistrationScreenState
+    extends State<ProviderRegistrationScreen> {
+  final _nameController = TextEditingController();
+  final _servicesController = TextEditingController();
+  final _addressController = TextEditingController();
+  bool _isLoading = false;
+  Position? _currentLocation;
+  String _locationStatus = 'لم يتم تحديد الموقع';
+
+  // دالة الحصول على الموقع الحالي
+  Future<void> _getCurrentLocation() async {
+    setState(() {
+      _isLoading = true;
+      _locationStatus = 'جاري تحديد الموقع...';
+    });
+
+    try {
+      // التحقق من تفعيل خدمة الموقع
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          setState(() {
+            _locationStatus = 'خدمة الموقع غير مفعلة';
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '⚠️ يرجى تفعيل خدمة الموقع (GPS) من إعدادات الهاتف',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
+      // التحقق من صلاحيات الموقع
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            setState(() {
+              _locationStatus = 'تم رفض صلاحيات الموقع';
+              _isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ يجب السماح بصلاحيات الموقع'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() {
+            _locationStatus = 'صلاحيات الموقع مرفوضة بشكل دائم';
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '⚠️ يرجى السماح بصلاحيات الموقع من إعدادات التطبيق',
+              ),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
+      // الحصول على الموقع مع timeout
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 15), // timeout بعد 15 ثانية
+      );
+
+      if (mounted) {
+        setState(() {
+          _currentLocation = position;
+          _locationStatus = 'تم تحديد الموقع بنجاح ✓';
+          _isLoading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ تم تحديد موقعك بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } on TimeoutException catch (_) {
+      if (mounted) {
+        setState(() {
+          _locationStatus = 'انتهت مهلة تحديد الموقع';
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '⏱️ استغرق تحديد الموقع وقتاً طويلاً. تأكد من وجود إشارة GPS قوية',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _locationStatus = 'خطأ في تحديد الموقع';
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ خطأ في تحديد الموقع: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _submitRequest() async {
+    // التحقق من الحقول المطلوبة
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء إدخال اسم الخدمة (الاسم التجاري)'),
+        ),
+      );
+      return;
+    }
+    if (_servicesController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الرجاء إدخال الخدمات المقدمة')),
+      );
+      return;
+    }
+    if (_addressController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('الرجاء إدخال العنوان')));
+      return;
+    }
+    if (_currentLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الرجاء تحديد موقعك على الخريطة')),
+      );
+      return;
+    }
+
+    // TODO: إضافة منطق رفع صورة الخدمة هنا (مثلاً باستخدام image_picker وfirebase_storage)
+    // String serviceImageUrl = await uploadServiceImage();
+    String serviceImageUrl = '';
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    // الحصول على رقم الهاتف من SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    final userPhone = prefs.getString('user_phone');
+    if (userPhone == null) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('يجب تسجيل الدخول أولاً')));
+      return;
+    }
+
+    final providerData = {
+      'providerName': userPhone, // اسم المستخدم (رقم الهاتف)
+      'name': _nameController.text.trim(),
+      'serviceName': _nameController.text.trim(), // اسم الخدمة التجاري
+      'services': _servicesController.text
+          .trim()
+          .split(',')
+          .map((s) => s.trim())
+          .toList(),
+      'status': 'pending',
+      'phone': userPhone,
+      'address': _addressController.text.trim(),
+      'location': GeoPoint(
+        _currentLocation!.latitude,
+        _currentLocation!.longitude,
+      ),
+      'serviceImage': serviceImageUrl,
+      'profileImage': serviceImageUrl,
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+
+    try {
+      // حفظ البيانات في مجموعة providers
+      await FirebaseFirestore.instance
+          .collection('providers')
+          .doc(userPhone)
+          .set(providerData);
+
+      // إرسال نسخة إلى مجموعة admin_requests
+      await FirebaseFirestore.instance
+          .collection('admin_requests')
+          .add(providerData);
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم إرسال الطلب بانتظار موافقة المالك')),
+      );
+
+      // الانتقال إلى الصفحة الرئيسية
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => ProviderHomeScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('حدث خطأ: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('تسجيل مزود الخدمة'),
+        backgroundColor: const Color(0xFF1E88E5),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // اسم مزود الخدمة
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'اسم مزود الخدمة *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // الخدمات
+            TextField(
+              controller: _servicesController,
+              decoration: const InputDecoration(
+                labelText: 'الخدمات (افصل بينها بفاصلة) *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.work),
+                hintText: 'مثال: قاعات أفراح, تصوير, كيك',
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 16),
+
+            // العنوان
+            TextField(
+              controller: _addressController,
+              decoration: const InputDecoration(
+                labelText: 'العنوان *',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.location_on),
+                hintText: 'مثال: بغداد - الكرادة',
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 20),
+
+            // زر تحديد الموقع
+            Card(
+              elevation: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'الموقع على الخريطة',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _locationStatus,
+                      style: TextStyle(
+                        color: _currentLocation != null
+                            ? Colors.green
+                            : Colors.orange,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (_currentLocation != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'خط العرض: ${_currentLocation!.latitude.toStringAsFixed(6)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                      Text(
+                        'خط الطول: ${_currentLocation!.longitude.toStringAsFixed(6)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _getCurrentLocation,
+                      icon: const Icon(Icons.my_location),
+                      label: Text(
+                        _currentLocation == null
+                            ? 'تحديد موقعي الحالي'
+                            : 'تحديث الموقع',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E88E5),
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(double.infinity, 45),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // زر الإرسال
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : ElevatedButton(
+                    onPressed: _submitRequest,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      'إرسال الطلب للمالك',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
