@@ -1432,10 +1432,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 8),
                       Text(
                         'يمكنك تصفح الخدمات والمنتجات والعناصر، لكن تحتاج لإنشاء حساب لتتمكن من:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[700],
-                        ),
+                        style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 12),
@@ -1469,10 +1466,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   label: const Text('إنشاء حساب'),
                   onPressed: () {
                     // الانتقال إلى شاشة التسجيل
-                    Navigator.of(context).pushNamedAndRemoveUntil(
-                      '/',
-                      (route) => false,
-                    );
+                    Navigator.of(
+                      context,
+                    ).pushNamedAndRemoveUntil('/', (route) => false);
                   },
                 ),
                 const SizedBox(height: 12),
@@ -1844,22 +1840,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
               SizedBox(height: 12),
-              Text(
-                'سيتم حذف:',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+              Text('سيتم حذف:', style: TextStyle(fontWeight: FontWeight.w600)),
               Text(
                 '• جميع بيانات حسابك الشخصية',
                 style: TextStyle(fontSize: 14),
               ),
-              Text(
-                '• سجل حجوزاتك',
-                style: TextStyle(fontSize: 14),
-              ),
-              Text(
-                '• رسائلك ومحادثاتك',
-                style: TextStyle(fontSize: 14),
-              ),
+              Text('• سجل حجوزاتك', style: TextStyle(fontSize: 14)),
+              Text('• رسائلك ومحادثاتك', style: TextStyle(fontSize: 14)),
             ],
           ),
           actions: [
@@ -1887,9 +1874,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
       try {
@@ -2466,7 +2451,7 @@ class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
                           const SizedBox(height: 12),
                           AccountStatementSection(providerId: currentUserId),
                           const SizedBox(height: 24),
-                          
+
                           // زر تسجيل الخروج
                           Center(
                             child: ElevatedButton.icon(
@@ -2624,7 +2609,10 @@ class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
                                 ),
                               ),
                               onPressed: () async {
-                                _showDeleteAccountDialog(context, currentUserId);
+                                _showDeleteAccountDialog(
+                                  context,
+                                  currentUserId,
+                                );
                               },
                             ),
                           ),
@@ -2704,22 +2692,13 @@ class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
                 style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
               ),
               SizedBox(height: 12),
-              Text(
-                'سيتم حذف:',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+              Text('سيتم حذف:', style: TextStyle(fontWeight: FontWeight.w600)),
               Text(
                 '• جميع بيانات حسابك والخدمات',
                 style: TextStyle(fontSize: 14),
               ),
-              Text(
-                '• سجل الحجوزات والعناصر',
-                style: TextStyle(fontSize: 14),
-              ),
-              Text(
-                '• رسائلك ومحادثاتك',
-                style: TextStyle(fontSize: 14),
-              ),
+              Text('• سجل الحجوزات والعناصر', style: TextStyle(fontSize: 14)),
+              Text('• رسائلك ومحادثاتك', style: TextStyle(fontSize: 14)),
             ],
           ),
           actions: [
@@ -2747,9 +2726,7 @@ class _ProviderAccountScreenState extends State<ProviderAccountScreen> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
-        ),
+        builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
       try {

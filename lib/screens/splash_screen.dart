@@ -41,9 +41,7 @@ class _SplashScreenState extends State<SplashScreen> {
         if (phone == 'guest') {
           print('👤 ضيف يدخل التطبيق بنجاح');
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => const MainNavigationScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
           );
           return;
         }
