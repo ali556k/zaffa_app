@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>clean_app</string>
+	<string>زفـة</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -41,83 +41,10 @@
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
-		<key>CFBundleDevelopmentRegion</key>
-		<string>$(DEVELOPMENT_LANGUAGE)</string>
-		<key>CFBundleDisplayName</key>
-		<string>زفـة</string>
-		<key>CFBundleExecutable</key>
-		<string>$(EXECUTABLE_NAME)</string>
-		<key>CFBundleIdentifier</key>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-		<key>CFBundleInfoDictionaryVersion</key>
-		<string>6.0</string>
-		<key>CFBundleName</key>
-		<string>زفـة</string>
-		<key>CFBundlePackageType</key>
-		<string>APPL</string>
-		<key>CFBundleShortVersionString</key>
-		<string>$(FLUTTER_BUILD_NAME)</string>
-		<key>CFBundleSignature</key>
-		<string>????</string>
-		<key>CFBundleVersion</key>
-		<string>$(FLUTTER_BUILD_NUMBER)</string>
-		<key>LSRequiresIPhoneOS</key>
-		<true/>
-		<key>UILaunchStoryboardName</key>
-		<string>LaunchScreen</string>
-		<key>UIMainStoryboardFile</key>
-		<string>Main</string>
-		<key>UISupportedInterfaceOrientations</key>
-		<array>
-			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
-		</array>
-		<key>UISupportedInterfaceOrientations~ipad</key>
-		<array>
-			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationPortraitUpsideDown</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
-		</array>
-		<key>CADisableMinimumFrameDurationOnPhone</key>
-		<true/>
-		<key>UIApplicationSupportsIndirectInputEvents</key>
-		<true/>
-		<key>UIStatusBarHidden</key>
-		<true/>
-		<!-- Deep Links Configuration -->
-		<key>CFBundleURLTypes</key>
-		<array>
-			<dict>
-				<key>CFBundleTypeRole</key>
-				<string>Editor</string>
-				<key>CFBundleURLName</key>
-				<string>com.zaffa.services</string>
-				<key>CFBundleURLSchemes</key>
-				<array>
-					<string>zafa</string>
-				</array>
-			</dict>
-		</array>
-		<!-- Universal Links (App Links) -->
-		<key>com.apple.developer.associated-domains</key>
-		<array>
-			<string>applinks:zafaapp.com</string>
-		</array>
-		<key>UIViewControllerBasedStatusBarAppearance</key>
+		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
-		<!-- Location Permissions (للخرائط والموقع) -->
-		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>نحتاج إلى موقعك لعرض الخدمات القريبة منك</string>
-		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>نحتاج إلى موقعك دائماً لعرض الخدمات القريبة</string>
-		<!-- Camera Permission (لالتقاط الصور) -->
-		<key>NSCameraUsageDescription</key>
-		<string>نحتاج إلى الكاميرا لالتقاط صور الإيصالات والملفات الشخصية</string>
-		<!-- Photo Library Permissions (لاختيار من المعرض) -->
-		<key>NSPhotoLibraryUsageDescription</key>
-		<string>نحتاج إلى الوصول لمعرض الصور لتحميل الصور</string>
+		<key>UISceneConfigurations</key>
+		<dict/>
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
@@ -146,19 +73,13 @@
 	<array>
 		<string>applinks:zafaapp.com</string>
 	</array>
-    <!-- Location Permissions (للخرائط والموقع) -->
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>نحتاج إلى موقعك لعرض الخدمات القريبة منك</string>
-
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>نحتاج إلى موقعك دائماً لعرض الخدمات القريبة</string>
-
-    <!-- Camera Permission (لالتقاط الصور) -->
-    <key>NSCameraUsageDescription</key>
-    <string>نحتاج إلى الكاميرا لالتقاط صور الإيصالات والملفات الشخصية</string>
-
-    <!-- Photo Library Permissions (لاختيار من المعرض) -->
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>نحتاج إلى الوصول لمعرض الصور لتحميل الصور</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>نحتاج إلى موقعك لعرض الخدمات القريبة منك</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>نحتاج إلى موقعك دائماً لعرض الخدمات القريبة</string>
+	<key>NSCameraUsageDescription</key>
+	<string>نحتاج إلى الكاميرا لالتقاط صور الإيصالات والملفات الشخصية</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>نحتاج إلى الوصول لمعرض الصور لتحميل الصور</string>
 </dict>
 </plist>

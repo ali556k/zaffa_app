@@ -156,7 +156,7 @@ class _ProviderBookingsManagementScreenState
             },
           );
         },
-      );
+      ),
     );
   }
 
@@ -377,7 +377,6 @@ class _ProviderBookingsManagementScreenState
                       label: const Text('عرض التعديلات'),
                     ),
                   ),
-                ],
                 const SizedBox(height: 12),
                 Container(
                     width: double.infinity,
