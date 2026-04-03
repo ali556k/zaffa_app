@@ -11,17 +11,20 @@ class BookingService {
   static const String _itemsAvailabilityCollection = 'items_availability';
 
   /// إنشاء حجز جديد
-  Future<String> createBooking(BookingModel booking) async {
+  Future<String> createBooking(BookingModel booking, {bool skipConflictCheck = false}) async {
     try {
       // التحقق من عدم وجود تعارض في الحجز
-      final conflict = await _checkBookingConflict(
-        booking.itemId,
-        booking.bookingDate,
-        booking.timeSlot,
-      );
+      // يُتخطى للخدمات غير القابلة للحجز (كيك، ورود، فساتين...)
+      if (!skipConflictCheck) {
+        final conflict = await _checkBookingConflict(
+          booking.itemId,
+          booking.bookingDate,
+          booking.timeSlot,
+        );
 
-      if (conflict) {
-        throw Exception('هذا اليوم أو الوقت محجوز مسبقاً');
+        if (conflict) {
+          throw Exception('هذا اليوم أو الوقت محجوز مسبقاً');
+        }
       }
 
       // حفظ الحجز

@@ -228,6 +228,7 @@ class _ServiceInformationScreenState extends State<ServiceInformationScreen> {
             area: area,
             location: locationStr,
             serviceType: 'قاعة عرس',
+            creditCard: _creditCardController.text.trim(),
           ),
         ),
       );

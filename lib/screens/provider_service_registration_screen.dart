@@ -316,6 +316,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           'serviceType': _selectedServiceType,
           'serviceName': _serviceNameController.text.trim(),
           'area': _areaController.text.trim(),
+          'creditCard': _creditCardController.text.trim(),
           'status': 'pending', // تغيير من 'approved' إلى 'pending'
           'createdAt': FieldValue.serverTimestamp(),
         };
@@ -327,6 +328,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           'serviceType': _selectedServiceType,
           'serviceName': _serviceNameController.text.trim(),
           'area': _areaController.text.trim(),
+          'creditCard': _creditCardController.text.trim(),
           'updatedAt': FieldValue.serverTimestamp(),
         };
         print('🔄 تحديث بيانات مزود موجود: $updateData');

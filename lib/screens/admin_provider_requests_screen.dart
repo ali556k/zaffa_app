@@ -719,6 +719,16 @@ class _AdminProviderRequestsScreenState
                                           .isNotEmpty ==
                                       true
                                 ? requestData['serviceImageUrl']
+                                : (requestData['hallImages'] is List &&
+                                      (requestData['hallImages'] as List)
+                                          .isNotEmpty)
+                                ? (requestData['hallImages'] as List).first
+                                      .toString()
+                                : (requestData['imageUrls'] is List &&
+                                      (requestData['imageUrls'] as List)
+                                          .isNotEmpty)
+                                ? (requestData['imageUrls'] as List).first
+                                      .toString()
                                 : requestData['imageUrl']
                                           ?.toString()
                                           .isNotEmpty ==
@@ -800,28 +810,15 @@ class _AdminProviderRequestsScreenState
                 // زر عرض الموقع على الخريطة
                 ElevatedButton.icon(
                   onPressed: () {
-                    double? lat;
-                    double? lng;
+                    final parsedLocation = _getLocationLatLng(requestData);
 
-                    // محاولة الحصول على الموقع من عدة حقول محتملة
-                    if (requestData['location'] != null) {
-                      final location = requestData['location'];
-                      if (location is GeoPoint) {
-                        lat = location.latitude;
-                        lng = location.longitude;
-                      } else if (location is Map) {
-                        lat = location['latitude'];
-                        lng = location['longitude'];
-                      }
-                    }
-
-                    if (lat == null || lng == null) {
-                      lat = requestData['latitude'];
-                      lng = requestData['longitude'];
-                    }
-
-                    if (lat != null && lng != null) {
-                      _showLocationOnMap(context, lat, lng, businessName);
+                    if (parsedLocation != null) {
+                      _showLocationOnMap(
+                        context,
+                        parsedLocation.latitude,
+                        parsedLocation.longitude,
+                        businessName,
+                      );
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -1600,6 +1597,49 @@ class _AdminProviderRequestsScreenState
       print('Error formatting date: $e');
       return 'تاريخ غير صالح';
     }
+  }
+
+  LatLng? _getLocationLatLng(Map<String, dynamic> data) {
+    final location = data['location'];
+
+    double? lat;
+    double? lng;
+
+    if (location != null) {
+      if (location is GeoPoint) {
+        lat = location.latitude;
+        lng = location.longitude;
+      } else if (location is Map) {
+        lat = (location['latitude'] ?? location['lat'])?.toDouble();
+        lng = (location['longitude'] ?? location['lng'])?.toDouble();
+      } else if (location is String) {
+        final parts = location.split(',');
+        if (parts.length >= 2) {
+          lat = double.tryParse(parts[0].trim());
+          lng = double.tryParse(parts[1].trim());
+        }
+      }
+    }
+
+    if ((lat == null || lng == null) &&
+        data['latitude'] != null &&
+        data['longitude'] != null) {
+      lat = (data['latitude']).toDouble();
+      lng = (data['longitude']).toDouble();
+    }
+
+    if ((lat == null || lng == null) &&
+        data['lat'] != null &&
+        data['lng'] != null) {
+      lat = (data['lat']).toDouble();
+      lng = (data['lng']).toDouble();
+    }
+
+    if (lat != null && lng != null) {
+      return LatLng(lat, lng);
+    }
+
+    return null;
   }
 
   Widget _buildStatusChip(String label, int count, Color color) {
@@ -3042,21 +3082,6 @@ class _AdminProviderRequestsScreenState
           );
         } catch (e) {
           print('⚠️ تعذر نشر القاعة في published_items: $e');
-        }
-
-        // نشر في services/hall/items أيضاً (للتوافق مع نظام العرض ServiceCategoriesScreen)
-        try {
-          final serviceItemRef = FirebaseFirestore.instance
-              .collection('services')
-              .doc('hall')
-              .collection('items')
-              .doc(hallDocRef.id);
-          await serviceItemRef.set(hallPayload);
-          print(
-            '✅ تم نشر القاعة أيضاً في services/hall/items بمعرف: ${serviceItemRef.id}',
-          );
-        } catch (e) {
-          print('⚠️ تعذر نشر القاعة في services/hall/items: $e');
         }
 
         // التحقق من حفظ البيانات في hall

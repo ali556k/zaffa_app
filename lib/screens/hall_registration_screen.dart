@@ -12,6 +12,7 @@ class HallRegistrationScreen extends StatefulWidget {
   final String area;
   final String location;
   final String serviceType;
+  final String creditCard;
 
   const HallRegistrationScreen({
     super.key,
@@ -21,6 +22,7 @@ class HallRegistrationScreen extends StatefulWidget {
     required this.area,
     required this.location,
     required this.serviceType,
+    this.creditCard = '',
   });
 
   @override
@@ -38,19 +40,22 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
   List<File> _hallImages = [];
   LatLng? _selectedLocation;
   final ImagePicker _picker = ImagePicker();
+  String _providerCreditCard = ''; // رقم بطاقة الائتمان المتوفّر
 
   // قائمة الخدمات الضمنية المتاحة
   final List<Map<String, dynamic>> _availableServices = [
-    {'name': 'خدمة التصوير الفوتوغرافي', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة التصوير بالفيديو', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة الطعام والضيافة', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة تنسيق الورود والزينة', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة الموسيقى والدي جي', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة الإضاءة المتقدمة', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة التكييف والتهوية', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة مواقف السيارات', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة الأمن والحراسة', 'price': 0.0, 'selected': false},
-    {'name': 'خدمة تنظيف ما بعد الحفل', 'price': 0.0, 'selected': false},
+    {'name': ' التصوير الفوتوغرافي' , 'selected': false},
+    {'name': ' التصوير بالفيديو', 'selected': false},
+    {'name': ' الطعام والضيافة', 'selected': false},
+    {'name': ' تنسيق الورود والزينة', 'selected': false},
+    {'name': ' الموسيقى والدي جي', 'selected': false},
+    {'name': ' الإضاءة المتقدمة', 'selected': false},
+    {'name': ' التكييف والتهوية', 'selected': false},
+    {'name': ' مواقف السيارات', 'selected': false},
+    {'name': ' الأمن والحراسة', 'selected': false},
+    {'name': 'واي فاي مجاني', 'selected': false},
+    {'name': 'شاشة عرض', 'selected': false},
+
   ];
 
   @override
@@ -178,9 +183,29 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
       List<Map<String, dynamic>> selectedServices = _availableServices
           .where((service) => service['selected'] == true)
           .map(
-            (service) => {'name': service['name'], 'price': service['price']},
+            (service) => {'name': service['name']},
           )
           .toList();
+
+      // الحصول على بيانات بطاقة الائتمان من المستخدم (المسار الافتراضي) أو من الإعداد الممرّر
+      _providerCreditCard = widget.creditCard.trim().isNotEmpty
+          ? widget.creditCard.trim()
+          : _providerCreditCard;
+
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(widget.userPhone)
+            .get();
+        if (userDoc.exists) {
+          final userCredit = userDoc.data()?['creditCard']?.toString() ?? '';
+          if (userCredit.isNotEmpty) {
+            _providerCreditCard = userCredit;
+          }
+        }
+      } catch (e) {
+        print('⚠️ فشل قراءة بطاقة الائتمان من users: $e');
+      }
 
       // إعداد بيانات القاعة الكاملة
       Map<String, dynamic> hallData = {
@@ -201,6 +226,9 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
 
+        'creditCard': _providerCreditCard,
+        'userCreditCard': _providerCreditCard,
+
         // بيانات القاعة المخصصة
         'hallName': _hallNameController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -212,10 +240,6 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
 
         // بيانات إضافية
         'totalServices': selectedServices.length,
-        'totalIncludedPrice': selectedServices.fold<double>(
-          0.0,
-          (sum, service) => sum + (service['price'] as double),
-        ),
       };
 
       // حفظ البيانات في provider_requests للموافقة من الإدارة
@@ -258,8 +282,9 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
             'status': 'pending',
             'createdAt': FieldValue.serverTimestamp(),
             'hallData': hallData,
+            'creditCard': _providerCreditCard,
             'isHallProvider': true,
-          });
+          }, SetOptions(merge: true));
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -299,7 +324,7 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
       backgroundColor: Color(0xFFF8F9FA),
       appBar: AppBar(
         title: Text(
-          'تسجيل_قاعة_أعراس',
+          'تسجيل قاعة أعراس',
           style: TextStyle(
             color: Colors.white,
             fontSize: 20,
@@ -566,7 +591,7 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
                   child: _isLoading
                       ? CircularProgressIndicator(color: Colors.white)
                       : Text(
-                          'تسجيل_قاعة_الأعراس',
+                          'تسجيل قاعة الأعراس',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -740,7 +765,15 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
               ],
             ),
             if (service['selected']) ...[
-              SizedBox(height: 12),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'يمكنك ترك الحقل فارغاً إذا كانت الخدمة ضمن السعر الأساسي للقاعة',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   const SizedBox(width: 40), // المحاذاة مع النص
@@ -754,10 +787,12 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
                   ),
                   Expanded(
                     child: TextFormField(
-                      initialValue: service['price'].toString(),
+                      initialValue: service['price'] != null
+                          ? service['price'].toString()
+                          : '',
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
-                        hintText: '0.00 دينار',
+                        hintText: '',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -774,8 +809,8 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
                     ),
                   ),
                   SizedBox(width: 8),
-                  Text(
-                    'دينار_3',
+                  const Text(
+                    'دينار',
                     style: TextStyle(fontSize: 14, color: Colors.grey),
                   ),
                 ],
@@ -889,7 +924,7 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'اضغط_على_الخريطة_لاختيار_موقع',
+                    'اضغط على الخريطة لاختيار موقع',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w500,

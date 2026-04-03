@@ -54,6 +54,11 @@ class BookingModel {
   final bool isCancelled;        // هل تم إلغاء الحجز
   final DateTime? cancelledAt;   // تاريخ الإلغاء
   final String? cancelledBy;     // من قام بالإلغاء (customer/provider)
+  final bool isModified;          // تم تعديل الحجز أم لا
+  final DateTime? modifiedAt;     // وقت التعديل
+  final DateTime? originalDate;   // التاريخ الأصلي قبل التعديل
+  final TimeSlot? originalTimeSlot;
+  final String status;            // حالة الطلب (pending, modified, confirmed, cancelled)
 
   BookingModel({
     this.id,
@@ -73,6 +78,11 @@ class BookingModel {
     this.isCancelled = false,
     this.cancelledAt,
     this.cancelledBy,
+    this.isModified = false,
+    this.modifiedAt,
+    this.originalDate,
+    this.originalTimeSlot,
+    this.status = 'pending',
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
@@ -93,21 +103,40 @@ class BookingModel {
       'isCancelled': isCancelled,
       'cancelledAt': cancelledAt != null ? Timestamp.fromDate(cancelledAt!) : null,
       'cancelledBy': cancelledBy,
+      'isModified': isModified,
+      'modifiedAt': modifiedAt != null ? Timestamp.fromDate(modifiedAt!) : null,
+      'originalDate': originalDate != null ? Timestamp.fromDate(originalDate!) : null,
+      'originalTimeSlot': originalTimeSlot?.toMap(),
+      'status': status,
     };
   }
 
   factory BookingModel.fromMap(Map<String, dynamic> map, String documentId) {
+    // تحويل تاريخ الحجز مع دعم كلا الصيغتين (bookingDate Timestamp أو date String)
+    DateTime bookingDate;
+    if (map['bookingDate'] != null) {
+      bookingDate = (map['bookingDate'] as Timestamp).toDate();
+    } else if (map['date'] != null) {
+      try {
+        bookingDate = DateTime.parse(map['date'].toString());
+      } catch (_) {
+        bookingDate = DateTime.now();
+      }
+    } else {
+      bookingDate = DateTime.now();
+    }
+
     return BookingModel(
       id: documentId,
       itemId: map['itemId'] ?? '',
       itemName: map['itemName'] ?? '',
       providerId: map['providerId'] ?? '',
       providerName: map['providerName'] ?? '',
-      customerId: map['customerId'] ?? '',
+      customerId: map['customerId'] ?? map['userPhone'] ?? '',
       customerName: map['customerName'] ?? '',
-      customerPhone: map['customerPhone'] ?? '',
+      customerPhone: map['customerPhone'] ?? map['userPhone'] ?? '',
       category: map['category'] ?? '',
-      bookingDate: (map['bookingDate'] as Timestamp).toDate(),
+      bookingDate: bookingDate,
       dayStatus: _parseDayStatus(map['dayStatus']),
       timeSlot: map['timeSlot'] != null ? TimeSlot.fromMap(map['timeSlot']) : null,
       createdAt: map['createdAt'] != null ? (map['createdAt'] as Timestamp).toDate() : DateTime.now(),
@@ -115,6 +144,11 @@ class BookingModel {
       isCancelled: map['isCancelled'] ?? false,
       cancelledAt: map['cancelledAt'] != null ? (map['cancelledAt'] as Timestamp).toDate() : null,
       cancelledBy: map['cancelledBy'],
+      isModified: map['isModified'] ?? false,
+      modifiedAt: map['modifiedAt'] != null ? (map['modifiedAt'] as Timestamp).toDate() : null,
+      originalDate: map['originalDate'] != null ? (map['originalDate'] as Timestamp).toDate() : null,
+      originalTimeSlot: map['originalTimeSlot'] != null ? TimeSlot.fromMap(map['originalTimeSlot']) : null,
+      status: map['status']?.toString() ?? 'pending',
     );
   }
 
@@ -145,6 +179,11 @@ class BookingModel {
     bool? isCancelled,
     DateTime? cancelledAt,
     String? cancelledBy,
+    bool? isModified,
+    DateTime? modifiedAt,
+    DateTime? originalDate,
+    TimeSlot? originalTimeSlot,
+    String? status,
   }) {
     return BookingModel(
       id: id ?? this.id,
@@ -164,6 +203,11 @@ class BookingModel {
       isCancelled: isCancelled ?? this.isCancelled,
       cancelledAt: cancelledAt ?? this.cancelledAt,
       cancelledBy: cancelledBy ?? this.cancelledBy,
+      isModified: isModified ?? this.isModified,
+      modifiedAt: modifiedAt ?? this.modifiedAt,
+      originalDate: originalDate ?? this.originalDate,
+      originalTimeSlot: originalTimeSlot ?? this.originalTimeSlot,
+      status: status ?? this.status,
     );
   }
 }

@@ -574,7 +574,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         Text(
-                          'سجل الآن',
+                          'انشاء حساب',
                           style: TextStyle(
                             color: Colors.white,
                             fontSize: 16,

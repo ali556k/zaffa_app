@@ -10,31 +10,38 @@ class CalendarService {
   Stream<Map<DateTime, DayStatus>> getMonthlyBookingStatus({
     required String itemId,
     required DateTime month,
+    String? excludeBookingId,
   }) {
     return _firestore
         .collection(_bookingsCollection)
         .where('itemId', isEqualTo: itemId)
-        .where('isCancelled', isEqualTo: false)
         .snapshots()
         .map((snapshot) {
           final Map<DateTime, List<BookingModel>> bookingsByDay = {};
-          final startOfMonth = DateTime(month.year, month.month, 1);
-          final endOfMonth = DateTime(
-            month.year,
-            month.month + 1,
-            0,
-            23,
-            59,
-            59,
-          );
+          // توسيع النطاق بـ 7 أيام لتغطية أيام الشهر المجاور الظاهرة في التقويم
+          final startOfRange = DateTime(month.year, month.month, 1)
+              .subtract(const Duration(days: 7));
+          final endOfRange =
+              DateTime(month.year, month.month + 1, 0, 23, 59, 59)
+                  .add(const Duration(days: 7));
 
-          // تجميع الحجوزات حسب اليوم مع فلترة التاريخ
           for (var doc in snapshot.docs) {
-            final booking = BookingModel.fromMap(doc.data(), doc.id);
+            BookingModel booking;
+            try {
+              booking = BookingModel.fromMap(doc.data(), doc.id);
+            } catch (e) {
+              continue;
+            }
 
-            // فلترة الشهر المطلوب
-            if (booking.bookingDate.isBefore(startOfMonth) ||
-                booking.bookingDate.isAfter(endOfMonth)) {
+            // تجاهل الحجوزات الملغاة
+            if (booking.isCancelled) continue;
+
+            // استثناء الحجز المُعدَّل حالياً (وضع التعديل)
+            if (excludeBookingId != null && doc.id == excludeBookingId) continue;
+
+            // فلترة النطاق الزمني
+            if (booking.bookingDate.isBefore(startOfRange) ||
+                booking.bookingDate.isAfter(endOfRange)) {
               continue;
             }
 
@@ -81,11 +88,11 @@ class CalendarService {
   Stream<List<TimeSlot>> getBookedTimeSlotsForDay({
     required String itemId,
     required DateTime date,
+    String? excludeBookingId,
   }) {
     return _firestore
         .collection(_bookingsCollection)
         .where('itemId', isEqualTo: itemId)
-        .where('isCancelled', isEqualTo: false)
         .snapshots()
         .map((snapshot) {
           final bookedSlots = <TimeSlot>[];
@@ -100,7 +107,18 @@ class CalendarService {
           );
 
           for (var doc in snapshot.docs) {
-            final booking = BookingModel.fromMap(doc.data(), doc.id);
+            BookingModel booking;
+            try {
+              booking = BookingModel.fromMap(doc.data(), doc.id);
+            } catch (_) {
+              continue;
+            }
+
+            // تجاهل الملغاة
+            if (booking.isCancelled) continue;
+
+            // استثناء الحجز المُعدَّل حالياً
+            if (excludeBookingId != null && doc.id == excludeBookingId) continue;
 
             // فلترة اليوم المطلوب
             if (booking.bookingDate.isBefore(startOfDay) ||
@@ -122,6 +140,7 @@ class CalendarService {
     required String itemId,
     required DateTime date,
     TimeSlot? timeSlot,
+    String? excludeBookingId,
   }) async {
     try {
       print('🔎 CalendarService.canBook() - itemId: $itemId');
@@ -129,12 +148,14 @@ class CalendarService {
       if (timeSlot != null) {
         print('🕐 الوقت: ${timeSlot.startTime} - ${timeSlot.endTime}');
       }
+      if (excludeBookingId != null) {
+        print('🚫 استثناء bookingId: $excludeBookingId');
+      }
 
       // استعلام مبسط بدون فهرسة مركبة
       final existingBookings = await _firestore
           .collection(_bookingsCollection)
           .where('itemId', isEqualTo: itemId)
-          .where('isCancelled', isEqualTo: false)
           .get();
 
       print('📊 عدد الحجوزات الكلية للعنصر: ${existingBookings.docs.length}');
@@ -150,6 +171,10 @@ class CalendarService {
 
       final dayBookings = existingBookings.docs.where((doc) {
         final data = doc.data();
+        // تجاهل الملغاة
+        if (data['isCancelled'] == true) return false;
+        // استثناء الحجز المُعدَّل حالياً
+        if (excludeBookingId != null && doc.id == excludeBookingId) return false;
         final bookingDate = (data['bookingDate'] as Timestamp).toDate();
         return bookingDate.isAfter(
               startOfDay.subtract(const Duration(seconds: 1)),

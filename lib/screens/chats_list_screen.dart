@@ -291,7 +291,7 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
                 : null,
             child: otherUserImage == null
                 ? Text(
-                    otherUserName[0].toUpperCase(),
+                    otherUserName.isNotEmpty ? otherUserName[0].toUpperCase() : '?',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,

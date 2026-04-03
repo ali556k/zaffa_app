@@ -26,6 +26,7 @@ class _ProviderMainScreenState extends State<ProviderMainScreen>
   List<Map<String, dynamic>> _pendingBookings = [];
   bool _isLoading = true;
   late Timer _refreshTimer;
+  StreamSubscription<QuerySnapshot>? _bookingsSub;
   late TabController _tabController;
   final BookingService _bookingService = BookingService();
 
@@ -51,6 +52,7 @@ class _ProviderMainScreenState extends State<ProviderMainScreen>
   @override
   void dispose() {
     _refreshTimer.cancel();
+    _bookingsSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -101,21 +103,8 @@ class _ProviderMainScreenState extends State<ProviderMainScreen>
           return data;
         }).toList();
 
-        // تحميل الحجوزات
-        final bookingsSnapshot = await FirebaseFirestore.instance
-            .collection('bookings')
-            .where('providerId', isEqualTo: _providerId)
-            .orderBy('createdAt', descending: true)
-            .get();
-
-        _bookings = bookingsSnapshot.docs.map((doc) {
-          final data = doc.data();
-          data['id'] = doc.id;
-          return data;
-        }).toList();
-
-        // تحديث الإحصائيات
-        _updateStatistics();
+        // الاشتراك في التحديثات الحية للحجوزات
+        _subscribeToBookings();
 
         print('تم تحميل ${_items.length} عنصر و ${_bookings.length} حجز');
       } else {
@@ -139,6 +128,29 @@ class _ProviderMainScreenState extends State<ProviderMainScreen>
         _isLoading = false;
       });
     }
+  }
+
+  void _subscribeToBookings() {
+    _bookingsSub?.cancel();
+    if (_providerId == null) return;
+
+    _bookingsSub = FirebaseFirestore.instance
+        .collection('bookings')
+        .where('providerId', isEqualTo: _providerId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .listen((snapshot) {
+      final newBookings = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+
+      setState(() {
+        _bookings = newBookings;
+        _updateStatistics();
+      });
+    });
   }
 
   void _updateStatistics() {

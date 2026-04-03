@@ -2,8 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../utils/chat_helper.dart';
 import '../models/booking_model.dart';
+import 'booking_screen.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -45,6 +47,74 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
       otherUserRole: 'provider',
       serviceName: booking.itemName, // اسم الخدمة من الحجز
     );
+  }
+
+  Future<void> _editBooking(
+    BuildContext context,
+    String bookingId,
+    Map<String, dynamic> bookingData,
+  ) async {
+    // تجهيز بيانات الخدمة من بيانات الحجز
+    final serviceData = <String, dynamic>{
+      'id': bookingData['itemId'] ?? '',
+      'name': bookingData['itemName'] ?? '',
+      'providerId': bookingData['providerId'] ?? '',
+      'providerName': bookingData['providerName'] ?? '',
+      'providerPhone': bookingData['providerPhone'] ?? '',
+      'serviceType': bookingData['category'] ?? '',
+      'category': bookingData['category'] ?? '',
+      'price': bookingData['basePrice'] ?? bookingData['price'] ?? '',
+    };
+
+    // استخراج بيانات الحجز الحالية
+    DateTime? existingDate;
+    if (bookingData['bookingDate'] != null) {
+      existingDate = (bookingData['bookingDate'] as Timestamp).toDate();
+    }
+
+    TimeSlot? existingTimeSlot;
+    if (bookingData['timeSlot'] != null) {
+      existingTimeSlot = TimeSlot.fromMap(
+        bookingData['timeSlot'] as Map<String, dynamic>,
+      );
+    }
+
+    // إيجاد orderId المرتبط بالحجز
+    final orderId = bookingData['orderId']?.toString() ?? '';
+    final editOrderId = orderId.isNotEmpty ? orderId : bookingId;
+
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookingScreen(
+          serviceData: serviceData,
+          existingItemPrice:
+              (bookingData['basePrice'] ?? bookingData['price'] ?? '')
+                  .toString()
+                  .replaceAll(RegExp(r'[^\d.]'), ''),
+          isEditMode: true,
+          editOrderId: editOrderId,
+          orderId: editOrderId,
+          existingScheduledAt: existingDate,
+          existingIsFullDayBooking: bookingData['timeSlot'] == null,
+          existingTimeSlot: existingTimeSlot,
+          existingNotes: bookingData['notes']?.toString(),
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      setState(() {}); // تحديث القائمة
+    }
+  }
+
+  Future<void> _launchMapsUrl(double lat, double lng) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   void _showBookingDetailsFromData(
@@ -138,6 +208,96 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                   DateFormat('dd/MM/yyyy - HH:mm', 'ar').format(createdAt),
                 ),
               ],
+              // قسم التوصيل
+              Builder(builder: (context) {
+                final deliveryAddress =
+                    bookingData['deliveryAddress']?.toString();
+                final deliveryLat = bookingData['deliveryLat'] is num
+                    ? (bookingData['deliveryLat'] as num).toDouble()
+                    : null;
+                final deliveryLng = bookingData['deliveryLng'] is num
+                    ? (bookingData['deliveryLng'] as num).toDouble()
+                    : null;
+                if ((deliveryAddress == null || deliveryAddress.isEmpty) &&
+                    (deliveryLat == null || deliveryLng == null)) {
+                  return const SizedBox.shrink();
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Divider(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2B0606).withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFF2B0606).withOpacity(0.2),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.delivery_dining,
+                                color: Color(0xFF2B0606),
+                                size: 20,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'موقع التوصيل',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF2B0606),
+                                  fontSize: 15,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            (deliveryAddress != null && deliveryAddress.isNotEmpty)
+                                ? deliveryAddress
+                                : 'تم تحديد موقع التوصيل على الخريطة',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          if (deliveryLat != null && deliveryLng != null) ...[
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () =>
+                                    _launchMapsUrl(deliveryLat, deliveryLng),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF2B0606),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                icon: const Icon(
+                                  Icons.map_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('عرض موقع التوصيل في الخريطة'),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }),
+
               if (notes != null && notes.toString().isNotEmpty) ...[
                 Divider(height: 24),
                 Text(
@@ -216,6 +376,69 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
               icon: Icon(Icons.chat, size: 18),
               label: Text('تواصل مع المزود'),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(String? status, bool isCancelled) {
+    Color color;
+    String text;
+    IconData icon;
+
+    if (isCancelled) {
+      color = Colors.red;
+      text = 'ملغى';
+      icon = Icons.cancel;
+    } else {
+      switch (status) {
+        case 'تم التأكيد':
+        case 'confirmed':
+          color = Colors.green;
+          text = 'مؤكد';
+          icon = Icons.check_circle;
+          break;
+        case 'مرفوض':
+        case 'rejected':
+          color = Colors.red;
+          text = 'مرفوض';
+          icon = Icons.cancel;
+          break;
+        case 'modified':
+          color = Colors.blue;
+          text = 'معدَّل';
+          icon = Icons.edit;
+          break;
+        case 'pending':
+        case 'بانتظار التأكيد':
+        default:
+          color = Colors.orange;
+          text = 'قيد الانتظار';
+          icon = Icons.hourglass_empty;
+          break;
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color, width: 1.2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -419,6 +642,38 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                           '${timeSlot['startTime']} - ${timeSlot['endTime']}';
                     }
 
+                    // بيانات التوصيل
+                    final deliveryAddress =
+                        bookingData['deliveryAddress']?.toString();
+                    final deliveryLat = bookingData['deliveryLat'] is num
+                        ? (bookingData['deliveryLat'] as num).toDouble()
+                        : null;
+                    final deliveryLng = bookingData['deliveryLng'] is num
+                        ? (bookingData['deliveryLng'] as num).toDouble()
+                        : null;
+                    final hasDelivery =
+                        (deliveryAddress != null && deliveryAddress.isNotEmpty) ||
+                        (deliveryLat != null && deliveryLng != null);
+
+                    // حساب نافذة التعديل (24 ساعة من الإنشاء)
+                    DateTime? createdAtDate;
+                    if (bookingData['createdAt'] != null) {
+                      createdAtDate =
+                          (bookingData['createdAt'] as Timestamp).toDate();
+                    }
+                    final now = DateTime.now();
+                    final canEdit = !isCancelled &&
+                        (bookingData['status'] == 'pending' ||
+                            bookingData['status'] == 'بانتظار التأكيد' ||
+                            bookingData['status'] == null) &&
+                        (createdAtDate == null ||
+                            now.difference(createdAtDate).inHours < 24);
+                    final withinWindow = createdAtDate != null &&
+                        now.difference(createdAtDate).inHours < 24;
+                    final hoursLeft = createdAtDate != null
+                        ? 24 - now.difference(createdAtDate).inHours
+                        : 0;
+
                     // تحديد حالة الحجز ولونه
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -470,42 +725,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                         ],
                                       ),
                                     ),
-                                    if (isCancelled)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.red,
-                                            width: 1.5,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(
-                                              Icons.cancel,
-                                              size: 16,
-                                              color: Colors.red,
-                                            ),
-                                            const SizedBox(width: 4),
-                                            const Text(
-                                              'ملغى',
-                                              style: TextStyle(
-                                                color: Colors.red,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                    _buildStatusBadge(
+                                      bookingData['status']?.toString(),
+                                      isCancelled,
+                                    ),
                                   ],
                                 ),
                                 const Divider(height: 20),
@@ -585,6 +808,56 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                     ],
                                   ),
 
+                                // موقع التوصيل
+                                if (hasDelivery) ...[const SizedBox(height: 6), Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.delivery_dining,
+                                        size: 16,
+                                        color: Color(0xFF2B0606),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          (deliveryAddress != null && deliveryAddress.isNotEmpty)
+                                              ? 'التوصيل إلى: $deliveryAddress'
+                                              : 'تم تحديد موقع التوصيل على الخريطة',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFF2B0606),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (deliveryLat != null &&
+                                          deliveryLng != null)
+                                        IconButton(
+                                          onPressed: () async {
+                                            final uri = Uri.parse(
+                                              'https://www.google.com/maps/search/?api=1&query=$deliveryLat,$deliveryLng',
+                                            );
+                                            if (await canLaunchUrl(uri)) {
+                                              await launchUrl(
+                                                uri,
+                                                mode: LaunchMode.externalApplication,
+                                              );
+                                            }
+                                          },
+                                          icon: const Icon(
+                                            Icons.map,
+                                            size: 20,
+                                            color: Color(0xFF2B0606),
+                                          ),
+                                          tooltip: 'عرض في الخريطة',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                    ],
+                                  ),
+                                ],
+
                                 // السعر
                                 if (price.isNotEmpty) ...[
                                   const SizedBox(height: 6),
@@ -611,6 +884,58 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                 ],
 
                                 const SizedBox(height: 12),
+
+                                // تحذير نافذة التعديل
+                                if (!isCancelled &&
+                                    (bookingData['status'] == 'pending' ||
+                                        bookingData['status'] ==
+                                            'بانتظار التأكيد' ||
+                                        bookingData['status'] == null)) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 7),
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    decoration: BoxDecoration(
+                                      color: canEdit
+                                          ? Colors.orange.withOpacity(0.1)
+                                          : Colors.grey.withOpacity(0.08),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: canEdit
+                                            ? Colors.orange[300]!
+                                            : Colors.grey[300]!,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          canEdit
+                                              ? Icons.timer_outlined
+                                              : Icons.lock_outline,
+                                          size: 16,
+                                          color: canEdit
+                                              ? Colors.orange[700]
+                                              : Colors.grey[500],
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            canEdit
+                                                ? 'يمكن تعديل الطلب خلال اول 24 ساعة من تثبيت الحجز'
+                                                : 'انتهت نافذة التعديل (24 ساعة)',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: canEdit
+                                                  ? Colors.orange[800]
+                                                  : Colors.grey[600],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
 
                                 // أزرار الإجراءات
                                 Row(
@@ -646,6 +971,61 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                         ),
                                       ),
                                     ),
+                                    // زر تعديل الطلب (نافذة 24 ساعة)
+                                    if (!isCancelled &&
+                                        (bookingData['status'] == 'pending' ||
+                                            bookingData['status'] ==
+                                                'بانتظار التأكيد' ||
+                                            bookingData['status'] == null)) ...[
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Tooltip(
+                                          message: canEdit
+                                              ? 'يمكنك التعديل خلال $hoursLeft ساعة متبقية'
+                                              : 'انتهت نافذة التعديل (24 ساعة)',
+                                          child: OutlinedButton.icon(
+                                            onPressed: canEdit
+                                                ? () => _editBooking(
+                                                      context,
+                                                      bookingDoc.id,
+                                                      bookingData,
+                                                    )
+                                                : null,
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: canEdit
+                                                  ? Colors.orange[700]
+                                                  : Colors.grey[400],
+                                              side: BorderSide(
+                                                color: canEdit
+                                                    ? Colors.orange[700]!
+                                                    : Colors.grey[300]!,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                vertical: 10,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                            ),
+                                            icon: Icon(
+                                              canEdit
+                                                  ? Icons.edit_outlined
+                                                  : Icons.lock_outline,
+                                              size: 18,
+                                            ),
+                                            label: Text(
+                                              canEdit
+                                                  ? 'تعديل'
+                                                  : 'منتهي',
+                                              style:
+                                                  const TextStyle(fontSize: 14),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                     if (!isCancelled) ...[
                                       SizedBox(width: 8),
                                       Expanded(

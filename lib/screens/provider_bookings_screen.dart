@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../utils/chat_helper.dart';
 
 class ProviderBookingsScreen extends StatelessWidget {
@@ -53,19 +55,33 @@ class ProviderBookingsScreen extends StatelessWidget {
     ).showSnackBar(SnackBar(content: Text('تم تحديث حالة الحجز!')));
   }
 
+  bool _isActionableStatus(String? status) {
+    return status == 'pending' ||
+        status == 'modified' ||
+        status == 'بانتظار التأكيد' ||
+        status == null;
+  }
+
   Widget _buildStatusBadge(String status) {
     Color color;
     String text;
 
     switch (status) {
       case 'تم التأكيد':
+      case 'confirmed':
         color = Colors.green;
         text = 'مؤكد';
         break;
       case 'مرفوض':
+      case 'rejected':
         color = Colors.red;
         text = 'مرفوض';
         break;
+      case 'modified':
+        color = Colors.blue;
+        text = 'معدّل';
+        break;
+      case 'pending':
       case 'بانتظار التأكيد':
       default:
         color = Colors.orange;
@@ -184,16 +200,42 @@ class ProviderBookingsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 _buildDetailRow(
-                  'التاريخ',
+                  'التاريخ الحالي',
                   _formatDate(bookingData['date']),
                   Icons.calendar_today,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 _buildDetailRow(
-                  'الوقت',
+                  'الوقت الحالي',
                   bookingData['time'] ?? 'غير محدد',
                   Icons.access_time,
                 ),
+                if (bookingData['originalDate'] != null ||
+                    bookingData['originalTimeSlot'] != null) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'التفاصيل الأصلية',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6E1229),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDetailRow(
+                    'التاريخ الأصلي',
+                    _formatDate(bookingData['originalDate']),
+                    Icons.history_edu,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildDetailRow(
+                    'الوقت الأصلي',
+                    bookingData['originalTimeSlot'] != null
+                        ? '${bookingData['originalTimeSlot']['startTime']} - ${bookingData['originalTimeSlot']['endTime']}'
+                        : 'غير محدد',
+                    Icons.history,
+                  ),
+                ],
                 const SizedBox(height: 16),
 
                 // تفاصيل الحجز من العميل
@@ -221,6 +263,94 @@ class ProviderBookingsScreen extends StatelessWidget {
                       style: const TextStyle(fontSize: 14),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                ],
+
+                // التوصيل إلى (يظهر فقط إذا كان الزبون قد أدخله)
+                if ((bookingData['deliveryAddress'] != null &&
+                        bookingData['deliveryAddress'].toString().isNotEmpty) ||
+                    (bookingData['deliveryLat'] != null &&
+                        bookingData['deliveryLng'] != null)) ...[
+                  const Text(
+                    'التوصيل إلى',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6E1229),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (bookingData['deliveryAddress'] != null &&
+                      bookingData['deliveryAddress'].toString().isNotEmpty)
+                    _buildDetailRow(
+                      'العنوان',
+                      bookingData['deliveryAddress'],
+                      Icons.local_shipping_outlined,
+                    )
+                  else
+                    _buildDetailRow(
+                      'الموقع',
+                      'تم تحديد موقع التوصيل على الخريطة',
+                      Icons.location_on_outlined,
+                    ),
+                  if (bookingData['deliveryLat'] != null &&
+                      bookingData['deliveryLng'] != null) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        height: 200,
+                        child: GoogleMap(
+                          initialCameraPosition: CameraPosition(
+                            target: LatLng(
+                              (bookingData['deliveryLat'] as num).toDouble(),
+                              (bookingData['deliveryLng'] as num).toDouble(),
+                            ),
+                            zoom: 15,
+                          ),
+                          markers: {
+                            Marker(
+                              markerId: const MarkerId('delivery'),
+                              position: LatLng(
+                                (bookingData['deliveryLat'] as num).toDouble(),
+                                (bookingData['deliveryLng'] as num).toDouble(),
+                              ),
+                              infoWindow:
+                                  const InfoWindow(title: 'موقع التوصيل'),
+                            ),
+                          },
+                          zoomControlsEnabled: false,
+                          myLocationButtonEnabled: false,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final lat =
+                              (bookingData['deliveryLat'] as num).toDouble();
+                          final lng =
+                              (bookingData['deliveryLng'] as num).toDouble();
+                          final uri =
+                              Uri.parse('https://www.google.com/maps?q=$lat,$lng');
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.open_in_new, size: 18),
+                        label: const Text('فتح في خرائط جوجل'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6E1229),
+                          side: const BorderSide(color: Color(0xFF6E1229)),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                 ],
 
@@ -293,10 +423,54 @@ class ProviderBookingsScreen extends StatelessWidget {
                       ),
                     ),
                     _buildStatusBadge(
-                      bookingData['status'] ?? 'بانتظار التأكيد',
+                      bookingData['status'] ?? 'pending',
                     ),
                   ],
                 ),
+                if (_isActionableStatus(bookingData['status'])) ...[
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _updateStatus(bookingId, 'تم التأكيد', context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.check, size: 18),
+                          label: const Text('قبول', style: TextStyle(fontSize: 15)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _updateStatus(bookingId, 'مرفوض', context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('رفض', style: TextStyle(fontSize: 15)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -465,8 +639,9 @@ class ProviderBookingsScreen extends StatelessWidget {
                             // الأزرار
                             Row(
                               children: [
-                                if (bookingData['status'] ==
-                                    'بانتظار التأكيد') ...[
+                                if (_isActionableStatus(
+                                  bookingData['status'],
+                                )) ...[
                                   Expanded(
                                     child: ElevatedButton.icon(
                                       onPressed: () => _updateStatus(

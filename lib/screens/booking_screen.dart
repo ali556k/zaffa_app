@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../utils/price_formatter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -10,10 +11,32 @@ import 'package:intl/intl.dart';
 import '../models/booking_model.dart';
 import '../services/calendar_service.dart';
 import '../services/booking_service.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geolocator/geolocator.dart';
 
 class BookingScreen extends StatefulWidget {
   final Map<String, dynamic> serviceData;
-  const BookingScreen({super.key, required this.serviceData});
+  final bool isEditMode;
+  final String? editOrderId;
+  final String? orderId;
+  final DateTime? existingScheduledAt;
+  final bool? existingIsFullDayBooking;
+  final TimeSlot? existingTimeSlot;
+  final String? existingNotes;
+  final String? existingItemPrice;
+
+  const BookingScreen({
+    super.key,
+    required this.serviceData,
+    this.isEditMode = false,
+    this.editOrderId,
+    this.orderId,
+    this.existingScheduledAt,
+    this.existingIsFullDayBooking,
+    this.existingTimeSlot,
+    this.existingNotes,
+    this.existingItemPrice,
+  });
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
@@ -28,6 +51,9 @@ class _BookingScreenState extends State<BookingScreen> {
   String? receiptUrl;
   final picker = ImagePicker();
   final TextEditingController _detailsController = TextEditingController();
+  final TextEditingController _deliveryAddressController = TextEditingController();
+  double? _deliveryLat;
+  double? _deliveryLng;
 
   // بيانات المزود والعنصر
   String providerName = '';
@@ -47,6 +73,13 @@ class _BookingScreenState extends State<BookingScreen> {
   List<TimeSlot> _bookedTimeSlotsForSelectedDay = [];
   bool _isFullDayBooking = true;
   bool isDateTimeConflict = false;
+
+  // معرف الحجز المرتبط (في وضع التعديل) - يُستثنى من فحص التضارب
+  String? _linkedBookingId;
+
+  // subscriptions لإدارتها وإلغائها بشكل صحيح
+  StreamSubscription? _calendarSub;
+  StreamSubscription? _slotsSub;
 
   // حساب السعر النهائي للتصوير بناءً على عدد الساعات
   double _calculateFinalPrice() {
@@ -195,6 +228,30 @@ class _BookingScreenState extends State<BookingScreen> {
     _loadUserData();
     _loadProviderData();
 
+    if (widget.isEditMode) {
+      selectedDate = widget.existingScheduledAt;
+      _isFullDayBooking = widget.existingIsFullDayBooking ?? true;
+      if (widget.existingTimeSlot != null) {
+        final partsStart = widget.existingTimeSlot!.startTime.split(':');
+        final partsEnd = widget.existingTimeSlot!.endTime.split(':');
+        selectedStartTime = TimeOfDay(
+          hour: int.tryParse(partsStart[0]) ?? 0,
+          minute: int.tryParse(partsStart[1]) ?? 0,
+        );
+        selectedEndTime = TimeOfDay(
+          hour: int.tryParse(partsEnd[0]) ?? 0,
+          minute: int.tryParse(partsEnd[1]) ?? 0,
+        );
+      }
+      if (widget.existingNotes != null) {
+        _detailsController.text = widget.existingNotes!;
+      }
+      // تحميل bookingId المرتبط لاستثنائه من فحص التضارب
+      if (widget.editOrderId != null) {
+        _loadLinkedBookingId(widget.editOrderId!);
+      }
+    }
+
     // الاستماع لتحديثات الحجوزات فقط للخدمات القابلة للحجز
     if (_isBookableService) {
       _listenToBookingUpdates();
@@ -203,38 +260,75 @@ class _BookingScreenState extends State<BookingScreen> {
 
   @override
   void dispose() {
+    _calendarSub?.cancel();
+    _slotsSub?.cancel();
     _detailsController.dispose();
+    _deliveryAddressController.dispose();
     super.dispose();
+  }
+
+  /// تحميل معرف الحجز المرتبط بالطلب (في وضع التعديل)
+  Future<void> _loadLinkedBookingId(String orderId) async {
+    try {
+      final orderDoc = await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(orderId)
+          .get();
+      final data = orderDoc.data();
+      String? bookingId = data?['bookingId']?.toString();
+
+      if (bookingId == null || bookingId.isEmpty) {
+        // Fallback: البحث في bookings عبر orderId
+        final q = await FirebaseFirestore.instance
+            .collection('bookings')
+            .where('orderId', isEqualTo: orderId)
+            .limit(1)
+            .get();
+        if (q.docs.isNotEmpty) bookingId = q.docs.first.id;
+      }
+
+      if (bookingId != null && mounted) {
+        setState(() => _linkedBookingId = bookingId);
+        // إعادة تهيئة الـ stream بعد معرفة الـ bookingId
+        if (_isBookableService) _listenToBookingUpdates();
+      }
+    } catch (e) {
+      print('⚠️ لم يتم تحميل linkedBookingId: $e');
+    }
   }
 
   /// الاستماع لتحديثات الحجوزات في الوقت الفعلي
   void _listenToBookingUpdates() {
     final itemId = widget.serviceData['id'] ?? '';
-    if (itemId.isEmpty) {
-      return;
-    }
+    if (itemId.isEmpty) return;
+
+    // إلغاء الاستماعات السابقة
+    _calendarSub?.cancel();
+    _slotsSub?.cancel();
 
     // الاستماع لحالة الأيام في الشهر الحالي
-    _calendarService
-        .getMonthlyBookingStatus(itemId: itemId, month: _focusedDay)
+    _calendarSub = _calendarService
+        .getMonthlyBookingStatus(
+          itemId: itemId,
+          month: _focusedDay,
+          excludeBookingId: _linkedBookingId,
+        )
+        .handleError((e) => print('❌ خطأ في stream التقويم: $e'))
         .listen((statusMap) {
-          if (mounted) {
-            setState(() {
-              _dayStatusMap = statusMap;
-            });
-          }
+          if (mounted) setState(() => _dayStatusMap = statusMap);
         });
 
     // الاستماع للأوقات المحجوزة في اليوم المحدد
     if (selectedDate != null) {
-      _calendarService
-          .getBookedTimeSlotsForDay(itemId: itemId, date: selectedDate!)
+      _slotsSub = _calendarService
+          .getBookedTimeSlotsForDay(
+            itemId: itemId,
+            date: selectedDate!,
+            excludeBookingId: _linkedBookingId,
+          )
+          .handleError((e) => print('❌ خطأ في stream الأوقات: $e'))
           .listen((slots) {
-            if (mounted) {
-              setState(() {
-                _bookedTimeSlotsForSelectedDay = slots;
-              });
-            }
+            if (mounted) setState(() => _bookedTimeSlotsForSelectedDay = slots);
           });
     }
   }
@@ -259,14 +353,15 @@ class _BookingScreenState extends State<BookingScreen> {
 
       // الاستماع للأوقات المحجوزة في اليوم الجديد
       final itemId = widget.serviceData['id'] ?? '';
-      _calendarService
-          .getBookedTimeSlotsForDay(itemId: itemId, date: selectedDay)
+      _slotsSub?.cancel();
+      _slotsSub = _calendarService
+          .getBookedTimeSlotsForDay(
+            itemId: itemId,
+            date: selectedDay,
+            excludeBookingId: _linkedBookingId,
+          )
           .listen((slots) {
-            if (mounted) {
-              setState(() {
-                _bookedTimeSlotsForSelectedDay = slots;
-              });
-            }
+            if (mounted) setState(() => _bookedTimeSlotsForSelectedDay = slots);
           });
 
       // عرض الأوقات المحجوزة إذا كان اليوم محجوز جزئياً
@@ -455,14 +550,8 @@ class _BookingScreenState extends State<BookingScreen> {
     if (itemId.isEmpty) return;
 
     try {
-      // إعادة تحميل حالة التقويم للشهر الحالي
-      setState(() {
-        _dayStatusMap = {}; // مسح البيانات القديمة
-      });
-
-      // إعادة بدء الاستماع للتحديثات
+      setState(() => _dayStatusMap = {});
       _listenToBookingUpdates();
-
       print('✅ تم تحديث بيانات التقويم بعد الحجز');
     } catch (e) {
       print('❌ خطأ في تحديث بيانات التقويم: $e');
@@ -573,7 +662,13 @@ class _BookingScreenState extends State<BookingScreen> {
             'العنصر';
 
         // استخراج السعر
-        var priceValue = widget.serviceData['price'];
+        var priceValue =
+            widget.serviceData['price'] ??
+            widget.serviceData['basePrice'] ??
+            widget.serviceData['hallData']?['basePrice'] ??
+            widget.serviceData['hallData']?['price'] ??
+            widget.existingItemPrice;
+
         if (priceValue != null) {
           itemPrice = priceValue.toString();
           // إضافة العملة إذا لم تكن موجودة
@@ -965,6 +1060,7 @@ class _BookingScreenState extends State<BookingScreen> {
       itemId: itemId,
       date: selectedDate!,
       timeSlot: newSlot,
+      excludeBookingId: _linkedBookingId,
     );
 
     print('📋 نتيجة التحقق: $canBookResult');
@@ -1112,7 +1208,8 @@ class _BookingScreenState extends State<BookingScreen> {
       }
     }
 
-    if (receiptImage == null) {
+    // في وضع التعديل لا نشترط رفع إيصال جديد (الإيصال الأصلي محفوظ مسبقاً)
+    if (receiptImage == null && !widget.isEditMode) {
       _showErrorDialog(
         'إيصال الدفع مطلوب',
         'يرجى رفع صورة إيصال الدفع لتأكيد الحجز',
@@ -1129,6 +1226,114 @@ class _BookingScreenState extends State<BookingScreen> {
       return;
     }
 
+    // إعداد timeSlot و dayStatus للاستخدام في كلا الوضعين
+    TimeSlot? timeSlot;
+    DayStatus dayStatus = DayStatus.fullyBooked;
+    if (!_isFullDayBooking &&
+        selectedStartTime != null &&
+        selectedEndTime != null) {
+      timeSlot = TimeSlot(
+        startTime:
+            '${selectedStartTime!.hour.toString().padLeft(2, '0')}:${selectedStartTime!.minute.toString().padLeft(2, '0')}',
+        endTime:
+            '${selectedEndTime!.hour.toString().padLeft(2, '0')}:${selectedEndTime!.minute.toString().padLeft(2, '0')}',
+      );
+      dayStatus = DayStatus.partiallyBooked;
+    }
+
+    // في وضع التعديل: تحديث الطلب الحالي بدون إنشاء حجز جديد
+    if (widget.isEditMode && widget.editOrderId != null) {
+      setState(() => isLoading = true);
+      try {
+        String orderId = widget.editOrderId!;
+
+        // نحتفظ بتاريخ الحجز الأصلي إذا كان موجودًا من التعديل السابق، وإلا نستخدم قيم الحجز الحالية
+        final existingOrderDoc = await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(orderId)
+            .get();
+        final existingData = existingOrderDoc.data() as Map<String, dynamic>?;
+        final originalDateTimestamp =
+            existingData?['originalDate'] as Timestamp?;
+        final originalTimeSlotMap =
+            existingData?['originalTimeSlot'] as Map<String, dynamic>?;
+
+        final originalDate = originalDateTimestamp != null
+            ? originalDateTimestamp.toDate()
+            : widget.existingScheduledAt;
+        final originalTimeSlot = originalTimeSlotMap != null
+            ? TimeSlot.fromMap(originalTimeSlotMap)
+            : widget.existingTimeSlot;
+
+        await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(orderId)
+            .update({
+              'scheduledAt': Timestamp.fromDate(bookingDate),
+              'isFullDayBooking': _isFullDayBooking,
+              'timeSlot': (_isFullDayBooking || timeSlot == null)
+                  ? null
+                  : timeSlot.toMap(),
+              'notes': _detailsController.text.trim(),
+              'status': 'modified',
+              'isModified': true,
+              'originalDate': originalDate != null
+                  ? Timestamp.fromDate(originalDate)
+                  : null,
+              'originalTimeSlot': originalTimeSlot?.toMap(),
+              'modifiedAt': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+
+        String? linkedBookingId = existingData?['bookingId']?.toString();
+
+        if (linkedBookingId == null || linkedBookingId.isEmpty) {
+          // لو لم يوجد bookingId في الطلب، نجرب إيجاد الحجز المرتبط عبر orderId في مجموعة bookings
+          final fallbackQuery = await FirebaseFirestore.instance
+              .collection('bookings')
+              .where('orderId', isEqualTo: orderId)
+              .limit(1)
+              .get();
+
+          if (fallbackQuery.docs.isNotEmpty) {
+            linkedBookingId = fallbackQuery.docs.first.id;
+          }
+        }
+
+        if (linkedBookingId != null && linkedBookingId.isNotEmpty) {
+          await FirebaseFirestore.instance
+              .collection('bookings')
+              .doc(linkedBookingId)
+              .update({
+                'bookingDate': Timestamp.fromDate(bookingDate),
+                'dayStatus': dayStatus.toString().split('.').last,
+                'timeSlot': (_isFullDayBooking || timeSlot == null)
+                    ? null
+                    : timeSlot.toMap(),
+                'notes': _detailsController.text.trim(),
+                'status': 'modified',
+                'isModified': true,
+                'originalDate': originalDate != null
+                    ? Timestamp.fromDate(originalDate)
+                    : null,
+                'originalTimeSlot': originalTimeSlot?.toMap(),
+                'modifiedAt': FieldValue.serverTimestamp(),
+                'orderId': orderId,
+              });
+        }
+
+        setState(() => isLoading = false);
+        _showSuccessDialog(isEditMode: true);
+      } catch (e) {
+        setState(() => isLoading = false);
+        _showErrorDialog(
+          'خطأ في تعديل الحجز',
+          'حدث خطأ أثناء تعديل الحجز. حاول ثانية.\nالخطأ: $e',
+        );
+      }
+      return;
+    }
+
     setState(() => isLoading = true);
 
     try {
@@ -1141,22 +1346,6 @@ class _BookingScreenState extends State<BookingScreen> {
 
       // رفع صورة الإيصال
       final receiptUrl = await _uploadReceiptImage();
-
-      // إنشاء TimeSlot إذا كان الحجز جزئي
-      TimeSlot? timeSlot;
-      DayStatus dayStatus = DayStatus.fullyBooked;
-
-      if (!_isFullDayBooking &&
-          selectedStartTime != null &&
-          selectedEndTime != null) {
-        timeSlot = TimeSlot(
-          startTime:
-              '${selectedStartTime!.hour.toString().padLeft(2, '0')}:${selectedStartTime!.minute.toString().padLeft(2, '0')}',
-          endTime:
-              '${selectedEndTime!.hour.toString().padLeft(2, '0')}:${selectedEndTime!.minute.toString().padLeft(2, '0')}',
-        );
-        dayStatus = DayStatus.partiallyBooked;
-      }
 
       // إنشاء نموذج الحجز
       final booking = BookingModel(
@@ -1186,6 +1375,7 @@ class _BookingScreenState extends State<BookingScreen> {
           itemId: widget.serviceData['id'] ?? '',
           date: bookingDate,
           timeSlot: timeSlot,
+          excludeBookingId: _linkedBookingId,
         );
 
         if (!canBookCheck) {
@@ -1203,7 +1393,11 @@ class _BookingScreenState extends State<BookingScreen> {
       }
 
       // استخدام BookingService للحجز مع التحقق من التعارض
-      final bookingId = await _bookingService.createBooking(booking);
+      // للخدمات غير القابلة للحجز: نتخطى فحص التعارض لأن عدة زبائن يمكنهم حجز نفس العنصر
+      final bookingId = await _bookingService.createBooking(
+        booking,
+        skipConflictCheck: !_isBookableService,
+      );
 
       // حساب السعر النهائي
       final finalPrice = _calculateFinalPrice();
@@ -1226,7 +1420,26 @@ class _BookingScreenState extends State<BookingScreen> {
             // معلومات موقع الزبون لعرضها للمزود
             'customerGovernorate': userGovernorate,
             'customerArea': userArea,
+            'orderId': widget.orderId ?? '',
+            // حفظ providerPhone لتسهيل الفلترة في شاشة المزود
+            'providerPhone': widget.serviceData['providerPhone'] ??
+                widget.serviceData['providerId'] ??
+                '',
+            // معلومات التوصيل
+            'deliveryAddress': _deliveryAddressController.text.trim().isEmpty
+                ? null
+                : _deliveryAddressController.text.trim(),
+            'deliveryLat': _deliveryLat,
+            'deliveryLng': _deliveryLng,
           });
+
+      // ربط الحجز بالطلب (إذا كان هناك طلب مرتبط)
+      if (widget.orderId != null && widget.orderId!.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(widget.orderId)
+            .update({'bookingId': bookingId});
+      }
 
       setState(() => isLoading = false);
 
@@ -1310,7 +1523,14 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   // إظهار رسالة النجاح
-  void _showSuccessDialog() {
+  void _showSuccessDialog({bool isEditMode = false}) {
+    final title = isEditMode
+        ? 'تم تعديل الحجز بنجاح!'
+        : 'تم تثبيت الحجز بنجاح!';
+    final message = isEditMode
+        ? 'تم تحديث بيانات الطلب وسيتم مراجعتها من قبل المزود.'
+        : 'تم إرسال حجزك إلى مزود الخدمة وسيتم التواصل معك قريباً لتأكيد التفاصيل.';
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1328,9 +1548,9 @@ class _BookingScreenState extends State<BookingScreen> {
               child: const Icon(Icons.check, color: Colors.white, size: 40),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'تم تثبيت الحجز بنجاح!',
-              style: TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1F2937),
@@ -1339,40 +1559,47 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'تم إرسال حجزك إلى مزود الخدمة وسيتم التواصل معك قريباً لتأكيد التفاصيل.',
+              message,
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context); // إغلاق النافذة فقط
-                  // إعادة ضبط النموذج للحجز التالي
-                  _resetBookingForm();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+            if (!isEditMode) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context); // إغلاق النافذة فقط
+                    // إعادة ضبط النموذج للحجز التالي
+                    _resetBookingForm();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'حجز آخر',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
-                child: const Text(
-                  'حجز آخر',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
+            ],
             SizedBox(
               width: double.infinity,
               child: TextButton(
                 onPressed: () {
                   Navigator.pop(context); // إغلاق النافذة
-                  Navigator.pop(context); // العودة للشاشة السابقة
+                  if (isEditMode) {
+                    Navigator.pop(
+                      context,
+                      true,
+                    ); // إرجاع نتيجة التعديل للشاشة السابقة
+                  }
                 },
                 child: const Text(
                   'العودة',
@@ -1391,9 +1618,12 @@ class _BookingScreenState extends State<BookingScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text(
-          'تثبيت الحجز',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        title: Text(
+          widget.isEditMode ? 'تعديل الحجز' : 'تثبيت الحجز',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         elevation: 0,
@@ -1407,6 +1637,71 @@ class _BookingScreenState extends State<BookingScreen> {
           : _isBookableService
           ? _buildBookableServiceBody()
           : _buildNonBookableServiceBody(),
+    );
+  }
+
+  /// بناء خلية التقويم مع النقطة أسفل الرقم
+  Widget _buildDayCell(
+    DateTime day, {
+    bool isToday = false,
+    bool isSelected = false,
+  }) {
+    final normalizedDay = DateTime(day.year, day.month, day.day);
+    final status = _dayStatusMap[normalizedDay];
+    Color? dotColor;
+    if (status == DayStatus.fullyBooked) {
+      dotColor = Colors.red;
+    } else if (status == DayStatus.partiallyBooked) {
+      dotColor = Colors.orange;
+    }
+
+    BoxDecoration? circleDecoration;
+    Color textColor = const Color(0xFF1F2937);
+
+    if (isSelected) {
+      circleDecoration = const BoxDecoration(
+        color: Color(0xFF10B981),
+        shape: BoxShape.circle,
+      );
+      textColor = Colors.white;
+    } else if (isToday) {
+      circleDecoration = BoxDecoration(
+        color: const Color(0xFF10B981).withOpacity(0.3),
+        shape: BoxShape.circle,
+      );
+    }
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: circleDecoration,
+          alignment: Alignment.center,
+          child: Text(
+            '${day.day}',
+            style: TextStyle(
+              color: textColor,
+              fontSize: 14,
+              fontWeight:
+                  isSelected || isToday ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
+        if (dotColor != null)
+          Positioned(
+            bottom: 2,
+            child: Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: dotColor,
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -1527,6 +1822,10 @@ class _BookingScreenState extends State<BookingScreen> {
               const SizedBox(height: 20),
 
               if (isAvailable) ...[
+                // حقل التوصيل إلى (قبل الإيصال ليراه الزبون أولاً)
+                _buildDeliveryCard(),
+                const SizedBox(height: 20),
+
                 // رفع إيصال الدفع
                 _buildReceiptUploadCard(),
                 const SizedBox(height: 20),
@@ -1857,6 +2156,56 @@ class _BookingScreenState extends State<BookingScreen> {
           ),
           const SizedBox(height: 20),
 
+          // حالة التعديل: عرض بيانات الحجز السابق مع التاريخ/الوقت/النوع
+          if (widget.isEditMode && widget.existingScheduledAt != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEAC5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFEBB447), width: 1),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'تفاصيل الحجز الأصلي',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'التاريخ الأصلي: ${DateFormat('dd/MM/yyyy').format(widget.existingScheduledAt!)}',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'النوع الأصلي: ${widget.existingIsFullDayBooking == true ? 'يوم كامل' : 'فترة محددة'}',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  if (widget.existingIsFullDayBooking == false &&
+                      widget.existingTimeSlot != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Text(
+                        'الوقت الأصلي: ${widget.existingTimeSlot!.startTime} - ${widget.existingTimeSlot!.endTime}',
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'السعر الأساسي: ${widget.existingItemPrice ?? itemPrice}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+
           // التقويم الملون
           TableCalendar(
             firstDay: DateTime.now(),
@@ -1915,43 +2264,12 @@ class _BookingScreenState extends State<BookingScreen> {
               weekendTextStyle: const TextStyle(color: Color(0xFF1F2937)),
             ),
             calendarBuilders: CalendarBuilders(
-              markerBuilder: (context, day, events) {
-                final normalizedDay = DateTime(day.year, day.month, day.day);
-                final dayStatus = _dayStatusMap[normalizedDay];
-
-                if (dayStatus == null) return null;
-
-                Color markerColor;
-                String tooltip;
-
-                switch (dayStatus) {
-                  case DayStatus.fullyBooked:
-                    markerColor = Colors.red;
-                    tooltip = 'محجوز بالكامل';
-                    break;
-                  case DayStatus.partiallyBooked:
-                    markerColor = Colors.orange;
-                    tooltip = 'محجوز جزئياً';
-                    break;
-                  case DayStatus.available:
-                    return null;
-                }
-
-                return Positioned(
-                  bottom: 1,
-                  child: Tooltip(
-                    message: tooltip,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: markerColor,
-                      ),
-                      width: 7,
-                      height: 7,
-                    ),
-                  ),
-                );
-              },
+              defaultBuilder: (ctx, day, _) => _buildDayCell(day),
+              todayBuilder:
+                  (ctx, day, _) => _buildDayCell(day, isToday: true),
+              selectedBuilder:
+                  (ctx, day, _) => _buildDayCell(day, isSelected: true),
+              outsideBuilder: (ctx, day, _) => _buildDayCell(day),
             ),
           ),
 
@@ -2549,6 +2867,194 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 
+  // كارت التوصيل إلى (للخدمات غير القابلة للحجز فقط)
+  Widget _buildDeliveryCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6E1229).withOpacity(0.04),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF6E1229).withOpacity(0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.08),
+            spreadRadius: 2,
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6E1229).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.local_shipping_outlined,
+                  color: Color(0xFF6E1229),
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'التوصيل إلى',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'حدد مكان التوصيل (اختياري)',
+                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          TextField(
+            controller: _deliveryAddressController,
+            maxLines: 2,
+            decoration: InputDecoration(
+              hintText: 'اكتب عنوان التوصيل أو الحي أو المنطقة...',
+              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+              prefixIcon: const Icon(
+                Icons.location_on_outlined,
+                color: Color(0xFF6E1229),
+              ),
+              filled: true,
+              fillColor: Colors.grey[50],
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    const BorderSide(color: Color(0xFF6E1229), width: 2),
+              ),
+              contentPadding: const EdgeInsets.all(16),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final LatLng? picked = await Navigator.push<LatLng?>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => _DeliveryLocationPickerScreen(
+                      initialLocation:
+                          _deliveryLat != null && _deliveryLng != null
+                          ? LatLng(_deliveryLat!, _deliveryLng!)
+                          : const LatLng(33.3152, 44.3661),
+                    ),
+                  ),
+                );
+                if (picked != null) {
+                  setState(() {
+                    _deliveryLat = picked.latitude;
+                    _deliveryLng = picked.longitude;
+                  });
+                }
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF6E1229),
+                side: const BorderSide(color: Color(0xFF6E1229)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: Icon(
+                _deliveryLat != null
+                    ? Icons.edit_location_alt
+                    : Icons.add_location_alt_outlined,
+                size: 22,
+              ),
+              label: Text(
+                _deliveryLat != null
+                    ? 'تغيير موقع التوصيل على الخريطة'
+                    : 'تحديد موقع التوصيل على الخريطة',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          if (_deliveryLat != null && _deliveryLng != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFF10B981).withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle,
+                    color: Color(0xFF10B981),
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'تم تحديد موقع التوصيل على الخريطة',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF10B981),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _deliveryLat = null;
+                      _deliveryLng = null;
+                    }),
+                    child: const Icon(
+                      Icons.close,
+                      size: 18,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   // زر تثبيت الحجز
   Widget _buildBookingButton() {
     // للخدمات القابلة للحجز: يجب اختيار تاريخ
@@ -2676,7 +3182,11 @@ class _BookingScreenState extends State<BookingScreen> {
                   const SizedBox(width: 12),
                 ],
                 Text(
-                  isLoading ? 'جاري التثبيت...' : 'تثبيت الحجز',
+                  isLoading
+                      ? (widget.isEditMode
+                            ? 'جارٍ حفظ التعديل...'
+                            : 'جاري التثبيت...')
+                      : (widget.isEditMode ? 'حفظ التعديل' : 'تثبيت الحجز'),
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -2728,6 +3238,173 @@ class _BookingScreenState extends State<BookingScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// شاشة اختيار موقع التوصيل
+class _DeliveryLocationPickerScreen extends StatefulWidget {
+  final LatLng initialLocation;
+
+  const _DeliveryLocationPickerScreen({required this.initialLocation});
+
+  @override
+  State<_DeliveryLocationPickerScreen> createState() =>
+      _DeliveryLocationPickerScreenState();
+}
+
+class _DeliveryLocationPickerScreenState
+    extends State<_DeliveryLocationPickerScreen> {
+  GoogleMapController? _mapController;
+  LatLng? _selectedLocation;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedLocation = widget.initialLocation;
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('صلاحية الموقع مطلوبة')),
+            );
+          }
+          return;
+        }
+      }
+      final position = await Geolocator.getCurrentPosition();
+      final newLocation = LatLng(position.latitude, position.longitude);
+      setState(() => _selectedLocation = newLocation);
+      _mapController?.animateCamera(CameraUpdate.newLatLng(newLocation));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ في الحصول على الموقع: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'تحديد موقع التوصيل',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF6E1229),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            onPressed: _getCurrentLocation,
+            icon: const Icon(Icons.my_location),
+            tooltip: 'موقعي الحالي',
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: widget.initialLocation,
+              zoom: 15,
+            ),
+            onMapCreated: (controller) => _mapController = controller,
+            onTap: (location) => setState(() => _selectedLocation = location),
+            markers: _selectedLocation != null
+                ? {
+                    Marker(
+                      markerId: const MarkerId('delivery_location'),
+                      position: _selectedLocation!,
+                      infoWindow: const InfoWindow(title: 'موقع التوصيل'),
+                    ),
+                  }
+                : {},
+          ),
+          Positioned(
+            top: 16,
+            left: 16,
+            right: 16,
+            child: Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'اضغط على الخريطة لتحديد موقع التوصيل',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    if (_selectedLocation != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        '${_selectedLocation!.latitude.toStringAsFixed(5)}, ${_selectedLocation!.longitude.toStringAsFixed(5)}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 20,
+            left: 20,
+            right: 20,
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _getCurrentLocation,
+                    icon: const Icon(Icons.my_location),
+                    label: const Text('استخدام موقعي الحالي'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _selectedLocation != null
+                        ? () => Navigator.pop(context, _selectedLocation)
+                        : null,
+                    icon: const Icon(Icons.check),
+                    label: const Text('تأكيد موقع التوصيل'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6E1229),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

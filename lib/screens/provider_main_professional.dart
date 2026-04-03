@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'splash_screen.dart';
 
 import 'provider_items_registration_screen.dart';
@@ -1087,9 +1088,28 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    hallData['hallName'] ??
-                        _serviceData!['serviceName'] ??
-                        'قاعة الأعراس',
+                    hallData['hallName']?.toString().trim().isNotEmpty == true
+                        ? hallData['hallName']
+                        : (_serviceData!['hallName']
+                                      ?.toString()
+                                      .trim()
+                                      .isNotEmpty ==
+                                  true
+                              ? _serviceData!['hallName']
+                              : (_serviceData!['serviceName']
+                                            ?.toString()
+                                            .trim()
+                                            .isNotEmpty ==
+                                        true
+                                    ? (_serviceData!['serviceName'] ==
+                                                  'قاعات اعراس' ||
+                                              _serviceData!['serviceName'] ==
+                                                  'قاعة عرس'
+                                          ? (_serviceData!['providerName'] ??
+                                                'قاعة الأعراس')
+                                          : _serviceData!['serviceName'])
+                                    : (_serviceData!['providerName'] ??
+                                          'قاعة الأعراس'))),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 20,
@@ -1108,7 +1128,7 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                   child: _buildInfoItem(
                     icon: Icons.people,
                     label: 'السعة',
-                    value: hallData['capacity'] ?? '300 شخص',
+                    value: hallData['capacity']?.toString() ?? '300 شخص',
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -1116,7 +1136,8 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                   child: _buildInfoItem(
                     icon: Icons.attach_money,
                     label: 'السعر',
-                    value: '${hallData['basePrice'] ?? 0} د.ع',
+                    value:
+                        '${hallData['basePrice'] ?? _serviceData!['price'] ?? _serviceData!['basePrice'] ?? '0'} د.ع',
                   ),
                 ),
               ],
@@ -1128,17 +1149,9 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
               children: [
                 Expanded(
                   child: _buildInfoItem(
-                    icon: Icons.room_service,
-                    label: 'الخدمات',
-                    value: '${hallData['totalServices'] ?? 0} خدمة',
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildInfoItem(
                     icon: Icons.location_on,
                     label: 'المنطقة',
-                    value: _serviceData!['area'] ?? '',
+                    value: hallData['area'] ?? _serviceData!['area'] ?? '',
                   ),
                 ),
               ],
@@ -2352,6 +2365,40 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                       ),
                     ],
                   ),
+                  if (booking['originalDate'] != null ||
+                      booking['originalTimeSlot'] != null) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE6F2FF),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFB3D4FF)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'التفاصيل الأصلية:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          if (booking['originalDate'] != null)
+                            Text(
+                              'التاريخ الأصلي: ${_formatDateOnly(booking['originalDate'])}',
+                            ),
+                          if (booking['originalTimeSlot'] != null)
+                            Text(
+                              'الوقت الأصلي: ${booking['originalTimeSlot']['startTime']} - ${booking['originalTimeSlot']['endTime']}',
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Builder(
                     builder: (_) {
@@ -2404,6 +2451,106 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                       ],
                     ),
                   ],
+                  if ((booking['receiptUrl'] ?? '').toString().isNotEmpty || true) ...[],
+                  // موقع التوصيل
+                  if ((booking['deliveryAddress'] ?? '').toString().isNotEmpty ||
+                      (booking['deliveryLat'] != null &&
+                          booking['deliveryLng'] != null)) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6E1229).withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFF6E1229).withOpacity(0.25),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.local_shipping_outlined,
+                                size: 16,
+                                color: Color(0xFF6E1229),
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                'موقع التوصيل:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Color(0xFF6E1229),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            (booking['deliveryAddress'] ?? '').toString().isNotEmpty
+                                ? booking['deliveryAddress']
+                                : 'تم تحديد الموقع على الخريطة',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                          if (booking['deliveryLat'] != null &&
+                              booking['deliveryLng'] != null) ...[
+                            const SizedBox(height: 8),
+                            GestureDetector(
+                              onTap: () async {
+                                final lat = (booking['deliveryLat'] as num).toDouble();
+                                final lng = (booking['deliveryLng'] as num).toDouble();
+                                final uri = Uri.parse(
+                                  'https://www.google.com/maps?q=$lat,$lng',
+                                );
+                                if (await canLaunchUrl(uri)) {
+                                  await launchUrl(
+                                    uri,
+                                    mode: LaunchMode.externalApplication,
+                                  );
+                                }
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 7,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF6E1229),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.map_outlined,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      'عرض في خرائط جوجل',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+
                   if ((booking['receiptUrl'] ?? '').toString().isNotEmpty) ...[
                     const SizedBox(height: 12),
                     const Text(

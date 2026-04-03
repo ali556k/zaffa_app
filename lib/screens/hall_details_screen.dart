@@ -1,9 +1,60 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/booking_model.dart';
 import '../screens/booking_screen.dart';
 import '../utils/image_utils.dart';
 import '../widgets/image_viewer.dart';
+import '../services/favorite_service.dart';
+
+class OrderModel {
+  final String id;
+  final String userId;
+  final String providerId;
+  final DateTime createdAt;
+  final bool isAccepted;
+  final bool isCancelled;
+  final bool isDeleted;
+  final String status;
+  final Map<String, dynamic> data;
+
+  OrderModel({
+    required this.id,
+    required this.userId,
+    required this.providerId,
+    required this.createdAt,
+    required this.isAccepted,
+    required this.isCancelled,
+    required this.isDeleted,
+    required this.status,
+    required this.data,
+  });
+
+  factory OrderModel.fromFirestore(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    return OrderModel(
+      id: doc.id,
+      userId: d['userId'] ?? '',
+      providerId: d['providerId'] ?? '',
+      createdAt: (d['createdAt'] as Timestamp).toDate(),
+      isAccepted: d['isAccepted'] ?? false,
+      isCancelled: d['isCancelled'] ?? false,
+      isDeleted: d['isDeleted'] ?? false,
+      status: d['status'] ?? 'pending',
+      data: d,
+    );
+  }
+
+  bool get canEdit {
+    if (isAccepted || isCancelled || isDeleted) return false;
+    final elapsed = DateTime.now().difference(createdAt);
+    return elapsed.inHours < 24;
+  }
+
+  bool get canDelete => canEdit;
+}
 
 class HallDetailsScreen extends StatefulWidget {
   final String providerId;
@@ -26,9 +77,15 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
   bool isLoading = true;
   Map<String, dynamic> fullProviderData = {};
   String? hallDocumentId; // معرف الوثيقة من Firestore
+  String? _userId;
+  OrderModel? currentOrder;
+  StreamSubscription<OrderModel?>? _orderSub;
   final PageController _imagePageController = PageController();
   int _currentImageIndex = 0;
   bool isPhotography = false; // للتفريق بين القاعات والتصوير
+
+  Duration _remainingEditDuration = Duration.zero;
+  Timer? _countdownTimer;
 
   @override
   bool get wantKeepAlive => true; // للحفاظ على حالة الشاشة
@@ -36,13 +93,63 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
   @override
   void initState() {
     super.initState();
+    _loadUserId();
     _loadFullProviderData();
+    _startCountdownTimer();
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (currentOrder != null) {
+        final end = currentOrder!.createdAt.add(const Duration(hours: 24));
+        final remaining = end.difference(DateTime.now());
+        setState(() {
+          _remainingEditDuration = remaining.isNegative
+              ? Duration.zero
+              : remaining;
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _orderSub?.cancel();
+    _countdownTimer?.cancel();
     _imagePageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userPhone = prefs.getString('user_phone');
+    setState(() {
+      _userId = userPhone;
+    });
+    _subscribeToOrder();
+  }
+
+  void _subscribeToOrder() {
+    if (_userId == null || _userId!.isEmpty) return;
+    _orderSub?.cancel();
+    _orderSub = FirebaseFirestore.instance
+        .collection('orders')
+        .where('userId', isEqualTo: _userId)
+        .where('providerId', isEqualTo: widget.providerId)
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) return null;
+          return OrderModel.fromFirestore(snapshot.docs.first);
+        })
+        .listen((order) {
+          setState(() {
+            currentOrder = order;
+          });
+          _startCountdownTimer();
+        });
   }
 
   Future<void> _loadFullProviderData() async {
@@ -85,6 +192,31 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
     }
   }
 
+  String displayedHallName() {
+    final hallDataName =
+        fullProviderData['hallData']?['hallName']?.toString().trim() ?? '';
+    final topHallName = fullProviderData['hallName']?.toString().trim() ?? '';
+    final serviceName =
+        fullProviderData['serviceName']?.toString().trim() ?? '';
+
+    if (hallDataName.isNotEmpty) {
+      return hallDataName;
+    }
+
+    if (topHallName.isNotEmpty) {
+      return topHallName;
+    }
+
+    if (serviceName.isNotEmpty &&
+        serviceName != 'قاعات اعراس' &&
+        serviceName != 'قاعة عرس') {
+      return serviceName;
+    }
+
+    // Fallback label.
+    return 'قاعة أعراس';
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // ضروري لـ AutomaticKeepAliveClientMixin
@@ -111,6 +243,7 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
             backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
             iconTheme: const IconThemeData(color: Colors.white),
             flexibleSpace: FlexibleSpaceBar(
+              title: const SizedBox.shrink(),
               background: images.isNotEmpty
                   ? Stack(
                       children: [
@@ -274,10 +407,14 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
                 const SizedBox(width: 16),
                 Expanded(
                   child: Text(
-                    fullProviderData['hallName'] ??
-                        fullProviderData['name'] ??
-                        fullProviderData['hallData']?['hallName'] ??
-                        widget.providerName,
+                    fullProviderData['hallData'] != null &&
+                            fullProviderData['hallData']['hallName'] != null &&
+                            fullProviderData['hallData']['hallName']
+                                .toString()
+                                .trim()
+                                .isNotEmpty
+                        ? fullProviderData['hallData']['hallName'].toString()
+                        : displayedHallName(),
                     style: const TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -289,6 +426,61 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
             ),
 
             const SizedBox(height: 20),
+
+            // Hall Name from hallData
+            if (fullProviderData['hallData'] != null &&
+                fullProviderData['hallData']['hallName'] != null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFFB46A6A).withOpacity(0.1),
+                      const Color(0xFFB46A6A).withOpacity(0.05),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFB46A6A).withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.home_work,
+                      color: Color(0xFFB46A6A),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'اسم القاعة',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6B7280),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            fullProviderData['hallData']['hallName'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 16),
 
             // Capacity and Governorate - عرض السعة فقط للقاعات وليس للتصوير
             Row(
@@ -819,6 +1011,110 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
     return price ?? 0.0;
   }
 
+  bool get _canCurrentOrderEdit {
+    if (currentOrder == null) return false;
+    return currentOrder!.canEdit &&
+        !currentOrder!.isAccepted &&
+        !currentOrder!.isCancelled;
+  }
+
+  bool get _hasActiveOrder {
+    if (currentOrder == null) return false;
+    return !currentOrder!.isCancelled && !currentOrder!.isDeleted;
+  }
+
+  bool get _isConfirmLocked {
+    if (!_hasActiveOrder) return false;
+    final elapsed = DateTime.now().difference(currentOrder!.createdAt);
+    return elapsed < const Duration(hours: 24);
+  }
+
+  bool get _canConfirmBooking {
+    return !_isConfirmLocked;
+  }
+
+  Future<void> _sendOrderNotification(
+    String providerId,
+    String title,
+    String body,
+  ) async {
+    final providerDoc = await FirebaseFirestore.instance
+        .collection('providers')
+        .doc(providerId)
+        .get();
+    final token = providerDoc.data()?['fcmToken']?.toString();
+    if (token == null || token.isEmpty) return;
+
+    await FirebaseFirestore.instance.collection('fcm_notifications').add({
+      'token': token,
+      'title': title,
+      'body': body,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> _editCurrentOrder() async {
+    if (!_canCurrentOrderEdit || currentOrder == null) return;
+
+    final existingScheduled = (currentOrder!.data['scheduledAt'] as Timestamp?)
+        ?.toDate();
+    final existingTimeSlotData =
+        currentOrder!.data['timeSlot'] as Map<String, dynamic>?;
+    final existingTimeSlot = existingTimeSlotData != null
+        ? TimeSlot.fromMap(existingTimeSlotData)
+        : null;
+
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BookingScreen(
+          serviceData: {
+            'id': hallDocumentId ?? widget.providerId,
+            'name': displayedHallName(),
+            'providerId': widget.providerId,
+            'providerName': widget.providerName,
+            'serviceType': 'hall',
+            'category': 'hall',
+            'price': _getBasePrice(),
+          },
+          existingItemPrice: _getBasePrice().toString(),
+          isEditMode: true,
+          editOrderId: currentOrder!.id,
+          orderId: currentOrder!.id,
+          existingScheduledAt: existingScheduled,
+          existingIsFullDayBooking:
+              currentOrder!.data['isFullDayBooking'] == true,
+          existingTimeSlot: existingTimeSlot,
+          existingNotes: currentOrder!.data['notes']?.toString(),
+        ),
+      ),
+    );
+
+    if (result == true) {
+      // إعادة تحميل بيانات الطلب بعد التعديل
+      _subscribeToOrder();
+    }
+  }
+
+  Future<void> _cancelCurrentOrder() async {
+    if (!_canCurrentOrderEdit || currentOrder == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(currentOrder!.id)
+        .update({
+          'isCancelled': true,
+          'status': 'cancelled',
+          'cancelledAt': FieldValue.serverTimestamp(),
+        });
+
+    await _sendOrderNotification(
+      widget.providerId,
+      'الطلب تم إلغاؤه',
+      'قام المستخدم بإلغاء طلبك على القاعة ${displayedHallName()}',
+    );
+  }
+
   Widget _buildBookingButtons() {
     return Column(
       children: [
@@ -826,7 +1122,7 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: _confirmBooking,
+            onPressed: _canConfirmBooking ? _confirmBooking : null,
             icon: const Icon(Icons.check_circle, color: Colors.white, size: 20),
             label: const Text(
               'تثبيت الحجز',
@@ -837,7 +1133,9 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
               ),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFB46A6A),
+              backgroundColor: _canConfirmBooking
+                  ? const Color(0xFFB46A6A)
+                  : Colors.grey,
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -845,6 +1143,139 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
               elevation: 4,
             ),
           ),
+        ),
+
+        if (_isConfirmLocked)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              '🎯 لقد ثبتت الحجز وبانتظار الموافقة، يمكنك تعديل الحجز خلال 24 ساعة من تثبيت الحجز.',
+              style: const TextStyle(
+                color: Colors.orange,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+
+        const SizedBox(height: 16),
+
+        if (currentOrder != null) ...[
+          if (currentOrder!.isAccepted)
+            const Text(
+              '⚠️ تم قبول الطلب من قبل المزود، لا يمكن تعديل أو حذف الطلب.',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            )
+          else ...[
+            Text(
+              _remainingEditDuration > Duration.zero
+                  ? 'متبقي ${_remainingEditDuration.inHours.toString().padLeft(2, '0')}:${(_remainingEditDuration.inMinutes % 60).toString().padLeft(2, '0')} ساعة للتعديل'
+                  : 'انتهى وقت التعديل',
+              style: const TextStyle(
+                color: Colors.green,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _canCurrentOrderEdit ? _editCurrentOrder : null,
+                child: const Text('تعديل الطلب'),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ],
+
+        // Favorite Button
+        StreamBuilder<bool>(
+          stream: FavoriteService().isFavoriteStream(
+            customerId: _userId ?? '',
+            itemId: hallDocumentId ?? widget.providerId,
+          ),
+          builder: (context, snapshot) {
+            final isFavorite = snapshot.data ?? false;
+            return SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  if (_userId == null || _userId!.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('يرجى تسجيل الدخول أولاً'),
+                        backgroundColor: Colors.orange,
+                      ),
+                    );
+                    return;
+                  }
+
+                  try {
+                    final images = ImageUtils.getImages(fullProviderData);
+                    final imageUrl = images.isNotEmpty
+                        ? images.first.toString()
+                        : null;
+
+                    final added = await FavoriteService().toggleFavorite(
+                      customerId: _userId!,
+                      itemId: hallDocumentId ?? widget.providerId,
+                      itemName: displayedHallName(),
+                      providerId: widget.providerId,
+                      providerName: widget.providerName,
+                      category: 'hall',
+                      price: _getBasePrice(),
+                      imageUrl: imageUrl,
+                    );
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            added
+                                ? '❤️ تمت الإضافة للمفضلات'
+                                : '💔 تمت الإزالة من المفضلات',
+                          ),
+                          backgroundColor: added ? Colors.green : Colors.grey,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('حدث خطأ: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: Icon(
+                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                  color: isFavorite ? Colors.red : Color(0xFFB46A6A),
+                  size: 20,
+                ),
+                label: Text(
+                  isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isFavorite ? Colors.red : Color(0xFFB46A6A),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(
+                    color: isFavorite ? Colors.red : Color(0xFFB46A6A),
+                    width: 2,
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ],
     );
@@ -895,22 +1326,48 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
 
   void _showLocationOnMap() async {
     try {
-      // التحقق من وجود إحداثيات الموقع في البيانات
-      if (fullProviderData['location'] != null &&
-          fullProviderData['location']['latitude'] != null &&
-          fullProviderData['location']['longitude'] != null) {
-        double lat = fullProviderData['location']['latitude'];
-        double lng = fullProviderData['location']['longitude'];
+      double? lat;
+      double? lng;
 
-        // إنشاء رابط خرائط جوجل
-        String googleMapsUrl =
+      final location = fullProviderData['location'];
+      if (location != null) {
+        if (location is GeoPoint) {
+          lat = location.latitude;
+          lng = location.longitude;
+        } else if (location is Map) {
+          lat = (location['latitude'] ?? location['lat'])?.toDouble();
+          lng = (location['longitude'] ?? location['lng'])?.toDouble();
+        } else if (location is String) {
+          final parts = location.split(',');
+          if (parts.length >= 2) {
+            lat = double.tryParse(parts[0].trim());
+            lng = double.tryParse(parts[1].trim());
+          }
+        }
+      }
+
+      if ((lat == null || lng == null) &&
+          fullProviderData['latitude'] != null &&
+          fullProviderData['longitude'] != null) {
+        lat = (fullProviderData['latitude']).toDouble();
+        lng = (fullProviderData['longitude']).toDouble();
+      }
+
+      if ((lat == null || lng == null) &&
+          fullProviderData['lat'] != null &&
+          fullProviderData['lng'] != null) {
+        lat = (fullProviderData['lat']).toDouble();
+        lng = (fullProviderData['lng']).toDouble();
+      }
+
+      if (lat != null && lng != null) {
+        final googleMapsUrl =
             'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
-        Uri uri = Uri.parse(googleMapsUrl);
+        final uri = Uri.parse(googleMapsUrl);
 
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else {
-          // في حالة فشل فتح الرابط، إظهار رسالة خطأ
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('لا يمكن فتح خرائط جوجل'),
@@ -919,7 +1376,6 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
           );
         }
       } else {
-        // في حالة عدم وجود إحداثيات، إظهار رسالة تنبيه
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('موقع القاعة غير متوفر'),
@@ -938,7 +1394,19 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
     }
   }
 
-  void _confirmBooking() {
+  void _confirmBooking() async {
+    if (!_canConfirmBooking) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'يمكن تثبيت حجز جديد بعد انتهاء مهلة 24 ساعة من آخر طلب.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     // التحقق من وجود معرف فريد
     if (hallDocumentId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -950,13 +1418,47 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
       return;
     }
 
+    final prefs = await SharedPreferences.getInstance();
+    final userPhone = prefs.getString('user_phone');
+    if (userPhone == null || userPhone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('يرجى تسجيل الدخول أولاً للحجز.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _userId = userPhone;
+    });
+
+    final orderRef = FirebaseFirestore.instance.collection('orders').doc();
+    await orderRef.set({
+      'userId': _userId,
+      'providerId': widget.providerId,
+      'createdAt': FieldValue.serverTimestamp(),
+      'isAccepted': false,
+      'isCancelled': false,
+      'isDeleted': false,
+      'status': 'pending',
+      'serviceName': displayedHallName(),
+      'hallId': hallDocumentId,
+    });
+
+    await _sendOrderNotification(
+      widget.providerId,
+      'طلب جديد من مستخدم',
+      'تم إنشاء طلب جديد للقاعة ${displayedHallName()} من قِبل المستخدم',
+    );
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => BookingScreen(
           serviceData: {
             'id': hallDocumentId!, // استخدام document ID الفريد فقط
-            'name': fullProviderData['serviceName'] ?? 'قاعة أعراس',
+            'name': displayedHallName(),
             'providerId': widget.providerId,
             'providerPhone': fullProviderData['phone'] ?? widget.providerId,
             'price': _getBasePrice().toString(), // استخدام السعر الصحيح
@@ -964,7 +1466,35 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
             'providerName':
                 fullProviderData['providerName'] ?? widget.providerName,
           },
+          orderId: orderRef.id,
         ),
+      ),
+    );
+  }
+
+  void _viewBookings() {
+    // TODO: Implement view bookings functionality
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.history, color: Color(0xFFB46A6A)),
+            SizedBox(width: 8),
+            Text('الحجوزات'),
+          ],
+        ),
+        content: const Text(
+          'ستظهر هنا قائمة بجميع حجوزاتك السابقة والحالية',
+          style: TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
       ),
     );
   }

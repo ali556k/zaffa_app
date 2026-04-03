@@ -89,5 +89,17 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- مطلوب لـ url_launcher لفتح روابط https (خرائط جوجل وغيرها) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+        <!-- مطلوب لفتح الخريطة مباشرة بـ geo: scheme -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <!-- مطلوب لفتح تطبيق خرائط جوجل مباشرة -->
+        <package android:name="com.google.android.apps.maps" />
     </queries>
 </manifest>
