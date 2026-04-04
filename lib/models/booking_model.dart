@@ -2,26 +2,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// حالة اليوم في التقويم
 enum DayStatus {
-  available,    // متاح للحجز (أخضر)
+  available, // متاح للحجز (أخضر)
   partiallyBooked, // محجوز جزئياً (أصفر)
-  fullyBooked,  // محجوز بالكامل (أحمر)
+  fullyBooked, // محجوز بالكامل (أحمر)
 }
 
 /// فترة زمنية محددة في اليوم
 class TimeSlot {
   final String startTime; // صيغة HH:mm مثل "14:00"
-  final String endTime;   // صيغة HH:mm مثل "18:00"
+  final String endTime; // صيغة HH:mm مثل "18:00"
 
-  TimeSlot({
-    required this.startTime,
-    required this.endTime,
-  });
+  TimeSlot({required this.startTime, required this.endTime});
 
   Map<String, dynamic> toMap() {
-    return {
-      'startTime': startTime,
-      'endTime': endTime,
-    };
+    return {'startTime': startTime, 'endTime': endTime};
   }
 
   factory TimeSlot.fromMap(Map<String, dynamic> map) {
@@ -37,28 +31,28 @@ class TimeSlot {
 
 /// نموذج الحجز
 class BookingModel {
-  final String? id;              // معرف الحجز في Firestore
-  final String itemId;           // معرف العنصر المحجوز (قاعة، سيارة، إلخ)
-  final String itemName;         // اسم العنصر
-  final String providerId;       // معرف مزود الخدمة
-  final String providerName;     // اسم مزود الخدمة
-  final String customerId;       // معرف الزبون
-  final String customerName;     // اسم الزبون
-  final String customerPhone;    // رقم هاتف الزبون
-  final String category;         // نوع الخدمة (hall, hotel, salon_care, car)
-  final DateTime bookingDate;    // تاريخ الحجز
-  final DayStatus dayStatus;     // حالة اليوم (كامل/جزئي)
-  final TimeSlot? timeSlot;      // الفترة الزمنية (إذا كان الحجز جزئي)
-  final DateTime createdAt;      // تاريخ إنشاء الحجز
-  final String? notes;           // ملاحظات إضافية
-  final bool isCancelled;        // هل تم إلغاء الحجز
-  final DateTime? cancelledAt;   // تاريخ الإلغاء
-  final String? cancelledBy;     // من قام بالإلغاء (customer/provider)
-  final bool isModified;          // تم تعديل الحجز أم لا
-  final DateTime? modifiedAt;     // وقت التعديل
-  final DateTime? originalDate;   // التاريخ الأصلي قبل التعديل
+  final String? id; // معرف الحجز في Firestore
+  final String itemId; // معرف العنصر المحجوز (قاعة، سيارة، إلخ)
+  final String itemName; // اسم العنصر
+  final String providerId; // معرف مزود الخدمة
+  final String providerName; // اسم مزود الخدمة
+  final String customerId; // معرف الزبون
+  final String customerName; // اسم الزبون
+  final String customerPhone; // رقم هاتف الزبون
+  final String category; // نوع الخدمة (hall, hotel, salon_care, car)
+  final DateTime bookingDate; // تاريخ الحجز
+  final DayStatus dayStatus; // حالة اليوم (كامل/جزئي)
+  final TimeSlot? timeSlot; // الفترة الزمنية (إذا كان الحجز جزئي)
+  final DateTime createdAt; // تاريخ إنشاء الحجز
+  final String? notes; // ملاحظات إضافية
+  final bool isCancelled; // هل تم إلغاء الحجز
+  final DateTime? cancelledAt; // تاريخ الإلغاء
+  final String? cancelledBy; // من قام بالإلغاء (customer/provider)
+  final bool isModified; // تم تعديل الحجز أم لا
+  final DateTime? modifiedAt; // وقت التعديل
+  final DateTime? originalDate; // التاريخ الأصلي قبل التعديل
   final TimeSlot? originalTimeSlot;
-  final String status;            // حالة الطلب (pending, modified, confirmed, cancelled)
+  final String status; // حالة الطلب (pending, modified, confirmed, cancelled)
 
   BookingModel({
     this.id,
@@ -101,11 +95,15 @@ class BookingModel {
       'createdAt': Timestamp.fromDate(createdAt),
       'notes': notes,
       'isCancelled': isCancelled,
-      'cancelledAt': cancelledAt != null ? Timestamp.fromDate(cancelledAt!) : null,
+      'cancelledAt': cancelledAt != null
+          ? Timestamp.fromDate(cancelledAt!)
+          : null,
       'cancelledBy': cancelledBy,
       'isModified': isModified,
       'modifiedAt': modifiedAt != null ? Timestamp.fromDate(modifiedAt!) : null,
-      'originalDate': originalDate != null ? Timestamp.fromDate(originalDate!) : null,
+      'originalDate': originalDate != null
+          ? Timestamp.fromDate(originalDate!)
+          : null,
       'originalTimeSlot': originalTimeSlot?.toMap(),
       'status': status,
     };
@@ -138,23 +136,35 @@ class BookingModel {
       category: map['category'] ?? '',
       bookingDate: bookingDate,
       dayStatus: _parseDayStatus(map['dayStatus']),
-      timeSlot: map['timeSlot'] != null ? TimeSlot.fromMap(map['timeSlot']) : null,
-      createdAt: map['createdAt'] != null ? (map['createdAt'] as Timestamp).toDate() : DateTime.now(),
+      timeSlot: map['timeSlot'] != null
+          ? TimeSlot.fromMap(map['timeSlot'])
+          : null,
+      createdAt: map['createdAt'] != null
+          ? (map['createdAt'] as Timestamp).toDate()
+          : DateTime.now(),
       notes: map['notes'],
       isCancelled: map['isCancelled'] ?? false,
-      cancelledAt: map['cancelledAt'] != null ? (map['cancelledAt'] as Timestamp).toDate() : null,
+      cancelledAt: map['cancelledAt'] != null
+          ? (map['cancelledAt'] as Timestamp).toDate()
+          : null,
       cancelledBy: map['cancelledBy'],
       isModified: map['isModified'] ?? false,
-      modifiedAt: map['modifiedAt'] != null ? (map['modifiedAt'] as Timestamp).toDate() : null,
-      originalDate: map['originalDate'] != null ? (map['originalDate'] as Timestamp).toDate() : null,
-      originalTimeSlot: map['originalTimeSlot'] != null ? TimeSlot.fromMap(map['originalTimeSlot']) : null,
+      modifiedAt: map['modifiedAt'] != null
+          ? (map['modifiedAt'] as Timestamp).toDate()
+          : null,
+      originalDate: map['originalDate'] != null
+          ? (map['originalDate'] as Timestamp).toDate()
+          : null,
+      originalTimeSlot: map['originalTimeSlot'] != null
+          ? TimeSlot.fromMap(map['originalTimeSlot'])
+          : null,
       status: map['status']?.toString() ?? 'pending',
     );
   }
 
   static DayStatus _parseDayStatus(dynamic status) {
     if (status == null) return DayStatus.available;
-    
+
     final statusStr = status.toString();
     if (statusStr == 'fullyBooked') return DayStatus.fullyBooked;
     if (statusStr == 'partiallyBooked') return DayStatus.partiallyBooked;
@@ -214,10 +224,10 @@ class BookingModel {
 
 /// الخدمات القابلة للحجز (لها تقويم)
 const List<String> bookableCategories = [
-  'hall',        // قاعات الأعراس
-  'hotel',       // الفنادق
-  'salon_care',  // الصالونات
-  'car',         // تأجير السيارات
+  'hall', // قاعات الأعراس
+  'hotel', // الفنادق
+  'salon_care', // الصالونات
+  'car', // تأجير السيارات
   'photography', // التصوير
 ];
 
@@ -228,11 +238,11 @@ bool isBookableCategory(String category) {
 
 /// الخدمات غير القابلة للحجز (فقط متوفر/غير متوفر)
 const List<String> availabilityOnlyCategories = [
-  'restaurant',    // الطعام
-  'bride_dress',   // فستان العروس
-  'groom_suit',    // البدلات الرجالية
+  'restaurant', // الطعام
+  'bride_dress', // فستان العروس
+  'groom_suit', // البدلات الرجالية
   'car_decoration', // تزيين السيارة
-  'cake',          // الكيك
-  'flowers',       // الورود
-  'honeymoon',     // شهر العسل
+  'cake', // الكيك
+  'flowers', // الورود
+  'honeymoon', // شهر العسل
 ];

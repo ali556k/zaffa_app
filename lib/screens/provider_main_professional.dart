@@ -2451,9 +2451,13 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                       ],
                     ),
                   ],
-                  if ((booking['receiptUrl'] ?? '').toString().isNotEmpty || true) ...[],
+                  if ((booking['receiptUrl'] ?? '').toString().isNotEmpty ||
+                      true)
+                    ...[],
                   // موقع التوصيل
-                  if ((booking['deliveryAddress'] ?? '').toString().isNotEmpty ||
+                  if ((booking['deliveryAddress'] ?? '')
+                          .toString()
+                          .isNotEmpty ||
                       (booking['deliveryLat'] != null &&
                           booking['deliveryLng'] != null)) ...[
                     const SizedBox(height: 10),
@@ -2490,7 +2494,9 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            (booking['deliveryAddress'] ?? '').toString().isNotEmpty
+                            (booking['deliveryAddress'] ?? '')
+                                    .toString()
+                                    .isNotEmpty
                                 ? booking['deliveryAddress']
                                 : 'تم تحديد الموقع على الخريطة',
                             style: const TextStyle(
@@ -2503,8 +2509,10 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
                             const SizedBox(height: 8),
                             GestureDetector(
                               onTap: () async {
-                                final lat = (booking['deliveryLat'] as num).toDouble();
-                                final lng = (booking['deliveryLng'] as num).toDouble();
+                                final lat = (booking['deliveryLat'] as num)
+                                    .toDouble();
+                                final lng = (booking['deliveryLng'] as num)
+                                    .toDouble();
                                 final uri = Uri.parse(
                                   'https://www.google.com/maps?q=$lat,$lng',
                                 );

@@ -315,8 +315,9 @@ class ProviderBookingsScreen extends StatelessWidget {
                                 (bookingData['deliveryLat'] as num).toDouble(),
                                 (bookingData['deliveryLng'] as num).toDouble(),
                               ),
-                              infoWindow:
-                                  const InfoWindow(title: 'موقع التوصيل'),
+                              infoWindow: const InfoWindow(
+                                title: 'موقع التوصيل',
+                              ),
                             ),
                           },
                           zoomControlsEnabled: false,
@@ -329,12 +330,13 @@ class ProviderBookingsScreen extends StatelessWidget {
                       width: double.infinity,
                       child: OutlinedButton.icon(
                         onPressed: () async {
-                          final lat =
-                              (bookingData['deliveryLat'] as num).toDouble();
-                          final lng =
-                              (bookingData['deliveryLng'] as num).toDouble();
-                          final uri =
-                              Uri.parse('https://www.google.com/maps?q=$lat,$lng');
+                          final lat = (bookingData['deliveryLat'] as num)
+                              .toDouble();
+                          final lng = (bookingData['deliveryLng'] as num)
+                              .toDouble();
+                          final uri = Uri.parse(
+                            'https://www.google.com/maps?q=$lat,$lng',
+                          );
                           if (await canLaunchUrl(uri)) {
                             await launchUrl(
                               uri,
@@ -422,9 +424,7 @@ class ProviderBookingsScreen extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    _buildStatusBadge(
-                      bookingData['status'] ?? 'pending',
-                    ),
+                    _buildStatusBadge(bookingData['status'] ?? 'pending'),
                   ],
                 ),
                 if (_isActionableStatus(bookingData['status'])) ...[
@@ -446,7 +446,10 @@ class ProviderBookingsScreen extends StatelessWidget {
                             ),
                           ),
                           icon: const Icon(Icons.check, size: 18),
-                          label: const Text('قبول', style: TextStyle(fontSize: 15)),
+                          label: const Text(
+                            'قبول',
+                            style: TextStyle(fontSize: 15),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -465,7 +468,10 @@ class ProviderBookingsScreen extends StatelessWidget {
                             ),
                           ),
                           icon: const Icon(Icons.close, size: 18),
-                          label: const Text('رفض', style: TextStyle(fontSize: 15)),
+                          label: const Text(
+                            'رفض',
+                            style: TextStyle(fontSize: 15),
+                          ),
                         ),
                       ),
                     ],

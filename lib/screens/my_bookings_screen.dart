@@ -209,94 +209,99 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                 ),
               ],
               // قسم التوصيل
-              Builder(builder: (context) {
-                final deliveryAddress =
-                    bookingData['deliveryAddress']?.toString();
-                final deliveryLat = bookingData['deliveryLat'] is num
-                    ? (bookingData['deliveryLat'] as num).toDouble()
-                    : null;
-                final deliveryLng = bookingData['deliveryLng'] is num
-                    ? (bookingData['deliveryLng'] as num).toDouble()
-                    : null;
-                if ((deliveryAddress == null || deliveryAddress.isEmpty) &&
-                    (deliveryLat == null || deliveryLng == null)) {
-                  return const SizedBox.shrink();
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Divider(height: 24),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2B0606).withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFF2B0606).withOpacity(0.2),
+              Builder(
+                builder: (context) {
+                  final deliveryAddress = bookingData['deliveryAddress']
+                      ?.toString();
+                  final deliveryLat = bookingData['deliveryLat'] is num
+                      ? (bookingData['deliveryLat'] as num).toDouble()
+                      : null;
+                  final deliveryLng = bookingData['deliveryLng'] is num
+                      ? (bookingData['deliveryLng'] as num).toDouble()
+                      : null;
+                  if ((deliveryAddress == null || deliveryAddress.isEmpty) &&
+                      (deliveryLat == null || deliveryLng == null)) {
+                    return const SizedBox.shrink();
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Divider(height: 24),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2B0606).withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFF2B0606).withOpacity(0.2),
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
-                            children: [
-                              Icon(
-                                Icons.delivery_dining,
-                                color: Color(0xFF2B0606),
-                                size: 20,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'موقع التوصيل',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(
+                                  Icons.delivery_dining,
                                   color: Color(0xFF2B0606),
-                                  fontSize: 15,
+                                  size: 20,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'موقع التوصيل',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF2B0606),
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              (deliveryAddress != null &&
+                                      deliveryAddress.isNotEmpty)
+                                  ? deliveryAddress
+                                  : 'تم تحديد موقع التوصيل على الخريطة',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                            if (deliveryLat != null && deliveryLng != null) ...[
+                              const SizedBox(height: 10),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton.icon(
+                                  onPressed: () =>
+                                      _launchMapsUrl(deliveryLat, deliveryLng),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF2B0606),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.map_outlined,
+                                    size: 18,
+                                  ),
+                                  label: const Text(
+                                    'عرض موقع التوصيل في الخريطة',
+                                  ),
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            (deliveryAddress != null && deliveryAddress.isNotEmpty)
-                                ? deliveryAddress
-                                : 'تم تحديد موقع التوصيل على الخريطة',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[800],
-                            ),
-                          ),
-                          if (deliveryLat != null && deliveryLng != null) ...[
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: () =>
-                                    _launchMapsUrl(deliveryLat, deliveryLng),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF2B0606),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                                icon: const Icon(
-                                  Icons.map_outlined,
-                                  size: 18,
-                                ),
-                                label: const Text('عرض موقع التوصيل في الخريطة'),
-                              ),
-                            ),
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              }),
+                    ],
+                  );
+                },
+              ),
 
               if (notes != null && notes.toString().isNotEmpty) ...[
                 Divider(height: 24),
@@ -643,8 +648,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                     }
 
                     // بيانات التوصيل
-                    final deliveryAddress =
-                        bookingData['deliveryAddress']?.toString();
+                    final deliveryAddress = bookingData['deliveryAddress']
+                        ?.toString();
                     final deliveryLat = bookingData['deliveryLat'] is num
                         ? (bookingData['deliveryLat'] as num).toDouble()
                         : null;
@@ -652,23 +657,26 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                         ? (bookingData['deliveryLng'] as num).toDouble()
                         : null;
                     final hasDelivery =
-                        (deliveryAddress != null && deliveryAddress.isNotEmpty) ||
+                        (deliveryAddress != null &&
+                            deliveryAddress.isNotEmpty) ||
                         (deliveryLat != null && deliveryLng != null);
 
                     // حساب نافذة التعديل (24 ساعة من الإنشاء)
                     DateTime? createdAtDate;
                     if (bookingData['createdAt'] != null) {
-                      createdAtDate =
-                          (bookingData['createdAt'] as Timestamp).toDate();
+                      createdAtDate = (bookingData['createdAt'] as Timestamp)
+                          .toDate();
                     }
                     final now = DateTime.now();
-                    final canEdit = !isCancelled &&
+                    final canEdit =
+                        !isCancelled &&
                         (bookingData['status'] == 'pending' ||
                             bookingData['status'] == 'بانتظار التأكيد' ||
                             bookingData['status'] == null) &&
                         (createdAtDate == null ||
                             now.difference(createdAtDate).inHours < 24);
-                    final withinWindow = createdAtDate != null &&
+                    final withinWindow =
+                        createdAtDate != null &&
                         now.difference(createdAtDate).inHours < 24;
                     final hoursLeft = createdAtDate != null
                         ? 24 - now.difference(createdAtDate).inHours
@@ -809,7 +817,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                   ),
 
                                 // موقع التوصيل
-                                if (hasDelivery) ...[const SizedBox(height: 6), Row(
+                                if (hasDelivery) ...[
+                                  const SizedBox(height: 6),
+                                  Row(
                                     children: [
                                       const Icon(
                                         Icons.delivery_dining,
@@ -819,7 +829,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          (deliveryAddress != null && deliveryAddress.isNotEmpty)
+                                          (deliveryAddress != null &&
+                                                  deliveryAddress.isNotEmpty)
                                               ? 'التوصيل إلى: $deliveryAddress'
                                               : 'تم تحديد موقع التوصيل على الخريطة',
                                           style: const TextStyle(
@@ -841,7 +852,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                             if (await canLaunchUrl(uri)) {
                                               await launchUrl(
                                                 uri,
-                                                mode: LaunchMode.externalApplication,
+                                                mode: LaunchMode
+                                                    .externalApplication,
                                               );
                                             }
                                           },
@@ -894,7 +906,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                   Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 7),
+                                      horizontal: 10,
+                                      vertical: 7,
+                                    ),
                                     margin: const EdgeInsets.only(bottom: 10),
                                     decoration: BoxDecoration(
                                       color: canEdit
@@ -986,10 +1000,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                           child: OutlinedButton.icon(
                                             onPressed: canEdit
                                                 ? () => _editBooking(
-                                                      context,
-                                                      bookingDoc.id,
-                                                      bookingData,
-                                                    )
+                                                    context,
+                                                    bookingDoc.id,
+                                                    bookingData,
+                                                  )
                                                 : null,
                                             style: OutlinedButton.styleFrom(
                                               foregroundColor: canEdit
@@ -1002,8 +1016,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                               ),
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                vertical: 10,
-                                              ),
+                                                    vertical: 10,
+                                                  ),
                                               shape: RoundedRectangleBorder(
                                                 borderRadius:
                                                     BorderRadius.circular(8),
@@ -1016,11 +1030,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                               size: 18,
                                             ),
                                             label: Text(
-                                              canEdit
-                                                  ? 'تعديل'
-                                                  : 'منتهي',
-                                              style:
-                                                  const TextStyle(fontSize: 14),
+                                              canEdit ? 'تعديل' : 'منتهي',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                              ),
                                             ),
                                           ),
                                         ),

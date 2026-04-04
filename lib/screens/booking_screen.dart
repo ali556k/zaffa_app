@@ -51,7 +51,8 @@ class _BookingScreenState extends State<BookingScreen> {
   String? receiptUrl;
   final picker = ImagePicker();
   final TextEditingController _detailsController = TextEditingController();
-  final TextEditingController _deliveryAddressController = TextEditingController();
+  final TextEditingController _deliveryAddressController =
+      TextEditingController();
   double? _deliveryLat;
   double? _deliveryLng;
 
@@ -1422,7 +1423,8 @@ class _BookingScreenState extends State<BookingScreen> {
             'customerArea': userArea,
             'orderId': widget.orderId ?? '',
             // حفظ providerPhone لتسهيل الفلترة في شاشة المزود
-            'providerPhone': widget.serviceData['providerPhone'] ??
+            'providerPhone':
+                widget.serviceData['providerPhone'] ??
                 widget.serviceData['providerId'] ??
                 '',
             // معلومات التوصيل
@@ -1684,8 +1686,9 @@ class _BookingScreenState extends State<BookingScreen> {
             style: TextStyle(
               color: textColor,
               fontSize: 14,
-              fontWeight:
-                  isSelected || isToday ? FontWeight.bold : FontWeight.normal,
+              fontWeight: isSelected || isToday
+                  ? FontWeight.bold
+                  : FontWeight.normal,
             ),
           ),
         ),
@@ -2265,10 +2268,9 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             calendarBuilders: CalendarBuilders(
               defaultBuilder: (ctx, day, _) => _buildDayCell(day),
-              todayBuilder:
-                  (ctx, day, _) => _buildDayCell(day, isToday: true),
-              selectedBuilder:
-                  (ctx, day, _) => _buildDayCell(day, isSelected: true),
+              todayBuilder: (ctx, day, _) => _buildDayCell(day, isToday: true),
+              selectedBuilder: (ctx, day, _) =>
+                  _buildDayCell(day, isSelected: true),
               outsideBuilder: (ctx, day, _) => _buildDayCell(day),
             ),
           ),
@@ -2951,8 +2953,10 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    const BorderSide(color: Color(0xFF6E1229), width: 2),
+                borderSide: const BorderSide(
+                  color: Color(0xFF6E1229),
+                  width: 2,
+                ),
               ),
               contentPadding: const EdgeInsets.all(16),
             ),
@@ -3008,8 +3012,7 @@ class _BookingScreenState extends State<BookingScreen> {
           if (_deliveryLat != null && _deliveryLng != null) ...[
             const SizedBox(height: 10),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFF10B981).withOpacity(0.08),
                 borderRadius: BorderRadius.circular(8),
@@ -3284,9 +3287,9 @@ class _DeliveryLocationPickerScreenState
       _mapController?.animateCamera(CameraUpdate.newLatLng(newLocation));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('خطأ في الحصول على الموقع: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('خطأ في الحصول على الموقع: $e')));
       }
     }
   }

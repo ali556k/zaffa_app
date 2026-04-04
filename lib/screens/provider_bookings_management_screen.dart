@@ -89,7 +89,8 @@ class _ProviderBookingsManagementScreenState
           return StreamBuilder<QuerySnapshot>(
             stream: _bookingsByPhoneStream,
             builder: (context, snap2) {
-              final loading = snap1.connectionState == ConnectionState.waiting ||
+              final loading =
+                  snap1.connectionState == ConnectionState.waiting ||
                   snap2.connectionState == ConnectionState.waiting;
               if (loading) {
                 return const Center(child: CircularProgressIndicator());
@@ -113,8 +114,12 @@ class _ProviderBookingsManagementScreenState
               docs.sort((a, b) {
                 final aData = a.data() as Map<String, dynamic>;
                 final bData = b.data() as Map<String, dynamic>;
-                final aDate = (aData['bookingDate'] as Timestamp?)?.toDate() ?? DateTime(2000);
-                final bDate = (bData['bookingDate'] as Timestamp?)?.toDate() ?? DateTime(2000);
+                final aDate =
+                    (aData['bookingDate'] as Timestamp?)?.toDate() ??
+                    DateTime(2000);
+                final bDate =
+                    (bData['bookingDate'] as Timestamp?)?.toDate() ??
+                    DateTime(2000);
                 return bDate.compareTo(aDate);
               });
 
@@ -312,12 +317,17 @@ class _ProviderBookingsManagementScreenState
                   icon: Icons.info_outline,
                   label: 'الحالة',
                   value: booking.status == 'modified' || booking.isModified
-                      ? 'معدل' : booking.status == 'confirmed'
-                      ? 'مؤكد' : (booking.isCancelled ? 'ملغي' : 'قيد الانتظار'),
+                      ? 'معدل'
+                      : booking.status == 'confirmed'
+                      ? 'مؤكد'
+                      : (booking.isCancelled ? 'ملغي' : 'قيد الانتظار'),
                   iconColor: booking.status == 'modified' || booking.isModified
-                      ? Colors.blue : booking.status == 'confirmed'
-                      ? Colors.green : booking.isCancelled
-                      ? Colors.red : Colors.grey,
+                      ? Colors.blue
+                      : booking.status == 'confirmed'
+                      ? Colors.green
+                      : booking.isCancelled
+                      ? Colors.red
+                      : Colors.grey,
                 ),
 
                 // الوقت (إذا كان حجز جزئي)
@@ -338,7 +348,8 @@ class _ProviderBookingsManagementScreenState
                   Container(
                     margin: const EdgeInsets.only(bottom: 12),
                     child: TextButton.icon(
-                      onPressed: booking.isModified || booking.status == 'modified'
+                      onPressed:
+                          booking.isModified || booking.status == 'modified'
                           ? () {
                               showDialog(
                                 context: context,
@@ -346,21 +357,32 @@ class _ProviderBookingsManagementScreenState
                                   title: const Text('عرض التعديلات'),
                                   content: Column(
                                     mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      Text('الحالة الحالية: ${booking.status == 'modified' || booking.isModified ? 'معدل' : booking.status}'),
+                                      Text(
+                                        'الحالة الحالية: ${booking.status == 'modified' || booking.isModified ? 'معدل' : booking.status}',
+                                      ),
                                       if (booking.originalDate != null)
-                                        Text('التاريخ السابق: ${DateFormat('dd/MM/yyyy').format(booking.originalDate!)}'),
+                                        Text(
+                                          'التاريخ السابق: ${DateFormat('dd/MM/yyyy').format(booking.originalDate!)}',
+                                        ),
                                       if (booking.originalTimeSlot != null)
-                                        Text('الوقت السابق: ${booking.originalTimeSlot!.startTime} - ${booking.originalTimeSlot!.endTime}'),
+                                        Text(
+                                          'الوقت السابق: ${booking.originalTimeSlot!.startTime} - ${booking.originalTimeSlot!.endTime}',
+                                        ),
                                       const SizedBox(height: 8),
                                       Text('التاريخ الحالي: ${formattedDate}'),
                                       if (booking.timeSlot != null)
-                                        Text('الوقت الحالي: ${booking.timeSlot!.startTime} - ${booking.timeSlot!.endTime}'),
+                                        Text(
+                                          'الوقت الحالي: ${booking.timeSlot!.startTime} - ${booking.timeSlot!.endTime}',
+                                        ),
                                       if (booking.notes != null)
                                         Text('ملاحظات: ${booking.notes}'),
                                       if (booking.modifiedAt != null)
-                                        Text('آخر تعديل: ${DateFormat('dd/MM/yyyy HH:mm').format(booking.modifiedAt!)}'),
+                                        Text(
+                                          'آخر تعديل: ${DateFormat('dd/MM/yyyy HH:mm').format(booking.modifiedAt!)}',
+                                        ),
                                     ],
                                   ),
                                   actions: [
@@ -377,8 +399,8 @@ class _ProviderBookingsManagementScreenState
                       label: const Text('عرض التعديلات'),
                     ),
                   ),
-                const SizedBox(height: 12),
-                Container(
+                  const SizedBox(height: 12),
+                  Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
