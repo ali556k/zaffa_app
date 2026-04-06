@@ -59,18 +59,48 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
   Future<void> _getCurrentLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+          await Geolocator.openAppSettings();
+        }
+        return;
+      }
+
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          return;
+        }
       }
-      
-      if (permission == LocationPermission.whileInUse || permission == LocationPermission.always) {
-        Position position = await Geolocator.getCurrentPosition();
-        setState(() {
-          _selectedLocation = LatLng(position.latitude, position.longitude);
-        });
+
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        Position position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+        if (mounted) {
+          setState(() {
+            _selectedLocation = LatLng(position.latitude, position.longitude);
+          });
+        }
       }
     } catch (e) {
-      print('خطأ في تحديد الموقع: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر الحصول على الموقع. حاول مجدداً.')),
+        );
+      }
     }
   }
 

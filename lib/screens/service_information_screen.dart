@@ -66,24 +66,50 @@ class _ServiceInformationScreenState extends State<ServiceInformationScreen> {
   Future<void> _getCurrentLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+          await Geolocator.openAppSettings();
+        }
+        return;
+      }
+
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('صلاحية الموقع مطلوبة')));
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('صلاحية الموقع مطلوبة')),
+            );
+          }
           return;
         }
       }
 
-      Position position = await Geolocator.getCurrentPosition();
-      setState(() {
-        _selectedLocation = LatLng(position.latitude, position.longitude);
-      });
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _selectedLocation = LatLng(position.latitude, position.longitude);
+        });
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('خطأ في الحصول على الموقع: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر الحصول على الموقع. حاول مجدداً.')),
+        );
+      }
     }
   }
 
@@ -787,28 +813,52 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
   Future<void> _getCurrentLocation() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+          await Geolocator.openAppSettings();
+        }
+        return;
+      }
+
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('صلاحية الموقع مطلوبة')));
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('صلاحية الموقع مطلوبة')),
+            );
+          }
           return;
         }
       }
 
-      Position position = await Geolocator.getCurrentPosition();
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
       final newLocation = LatLng(position.latitude, position.longitude);
 
-      setState(() {
-        _selectedLocation = newLocation;
-      });
-
-      _mapController?.animateCamera(CameraUpdate.newLatLng(newLocation));
+      if (mounted) {
+        setState(() {
+          _selectedLocation = newLocation;
+        });
+        _mapController?.animateCamera(CameraUpdate.newLatLng(newLocation));
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('خطأ في الحصول على الموقع: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('تعذر الحصول على الموقع. حاول مجدداً.')),
+        );
+      }
     }
   }
 
