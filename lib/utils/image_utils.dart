@@ -23,19 +23,11 @@ class ImageUtils {
     BoxFit fit = BoxFit.cover,
     Widget? placeholder,
     Widget? errorWidget,
+    bool highQuality = false,
   }) {
     if (imageUrl.isEmpty) {
       return errorWidget ?? _defaultErrorWidget(width, height);
     }
-
-    // التحقق من أن القيم ليست infinity قبل التحويل لـ int
-    // تقليل الجودة للهواتف الضعيفة
-    final memWidth = (width != null && width.isFinite && width < 400)
-        ? width.toInt()
-        : 400;
-    final memHeight = (height != null && height.isFinite && height < 400)
-        ? height.toInt()
-        : 400;
 
     return CachedNetworkImage(
       imageUrl: cleanImageUrl(imageUrl),
@@ -48,10 +40,8 @@ class ImageUtils {
           errorWidget ?? _defaultErrorWidget(width, height),
       fadeInDuration: const Duration(milliseconds: 150),
       fadeOutDuration: const Duration(milliseconds: 50),
-      memCacheWidth: memWidth,
-      memCacheHeight: memHeight,
-      maxWidthDiskCache: 500,
-      maxHeightDiskCache: 500,
+      maxWidthDiskCache: highQuality ? 2160 : 1080,
+      maxHeightDiskCache: highQuality ? 2160 : 1080,
     );
   }
 

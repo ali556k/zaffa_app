@@ -56,6 +56,7 @@ class _ImageViewerState extends State<ImageViewer> {
                   child: ImageUtils.buildCachedImage(
                     imageUrl: widget.imageUrls[index],
                     fit: BoxFit.contain,
+                    highQuality: true,
                     errorWidget: Container(
                       color: Colors.grey[900],
                       child: const Center(
