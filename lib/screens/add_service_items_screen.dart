@@ -670,11 +670,7 @@ class _AddItemDialogState extends State<AddItemDialog> {
 
   Future<void> _pickImages() async {
     try {
-      final images = await _picker.pickMultiImage(
-        imageQuality: 70,
-        maxWidth: 1024,
-        maxHeight: 1024,
-      );
+      final images = await _picker.pickMultiImage(imageQuality: 100);
       if (images.isNotEmpty) {
         setState(() {
           _pickedImages = images.take(5).toList();

@@ -7,6 +7,7 @@ import 'main_navigation_screen.dart';
 import 'register_screen.dart';
 import 'provider_main_professional.dart';
 import '../services/notification_service.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -147,6 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       await prefs.setString('user_phone', phone);
       await prefs.setString('account_type', accountType);
+      await prefs.setBool('is_logged_in', true);
 
       // إجبار حفظ البيانات فوراً
       await prefs.commit();
@@ -264,6 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
     await prefs.setString('account_type', accountType);
     await prefs.setString('currentUserId', userPhone);
     await prefs.setString('providerName', providerName);
+    await prefs.setBool('is_logged_in', true);
 
     // إجبار حفظ البيانات فوراً
     await prefs.commit();
@@ -592,38 +595,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   // زر نسيت كلمة المرور
                   TextButton(
                     onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          title: const Text(
-                            'إعادة تعيين كلمة المرور',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF530405),
-                            ),
-                          ),
-                          content: const Text(
-                            'يرجى التواصل مع الدعم الفني لاستعادة كلمة المرور.',
-                            style: TextStyle(fontSize: 15),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: TextButton.styleFrom(
-                                foregroundColor: const Color(0xFF530405),
-                              ),
-                              child: const Text(
-                                'حسنًا',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                          ],
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ForgotPasswordScreen(),
                         ),
                       );
                     },
@@ -648,6 +623,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       await prefs.setString('user_phone', 'guest');
                       await prefs.setString('user_name', 'ضيف');
                       await prefs.setString('account_type', 'guest');
+                      await prefs.setBool('is_logged_in', true);
 
                       if (mounted) {
                         Navigator.of(context).pushAndRemoveUntil(

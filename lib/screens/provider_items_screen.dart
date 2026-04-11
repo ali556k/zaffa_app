@@ -53,8 +53,18 @@ class _ProviderItemsScreenState extends State<ProviderItemsScreen>
 
       if (providerDoc.exists) {
         final data = providerDoc.data();
+        final rawLocation = data?['location'];
+        Map<String, dynamic>? parsedLocation;
+        if (rawLocation is GeoPoint) {
+          parsedLocation = {
+            'latitude': rawLocation.latitude,
+            'longitude': rawLocation.longitude,
+          };
+        } else if (rawLocation is Map) {
+          parsedLocation = Map<String, dynamic>.from(rawLocation);
+        }
         setState(() {
-          providerLocation = data?['location'];
+          providerLocation = parsedLocation;
           final area = data?['area'] ?? '';
           final governorate = data?['governorate'] ?? '';
           providerAddress = '$area - $governorate';

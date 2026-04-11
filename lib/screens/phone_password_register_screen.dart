@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:bcrypt/bcrypt.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'main_navigation_screen.dart';
+import '../register_with_otp.dart';
 
 class PhonePasswordRegisterScreen extends StatefulWidget {
   const PhonePasswordRegisterScreen({super.key});
@@ -137,19 +138,46 @@ class _PhonePasswordRegisterScreenState
                             creditCard.isEmpty ||
                             creditCard.length < 16) {
                           setState(() {
-                            _error = 'يرجى إدخال جميع الحقول بشكل صحيح';
+                            _error =
+                                'يرجى إدخال جميع الحقول بشكل صحيح\nكلمة المرور يجب أن تكون 6 أحرف على الأقل';
                           });
                           return;
                         }
 
-                        // تجاوز OTP مؤقتاً - إنشاء الحساب مباشرة
-                        _registerDirectly(
-                          username,
-                          phone,
-                          password,
-                          province,
-                          creditCard,
-                        );
+                        // التحقق من الهاتف غير مسجل ثم الانتقال لـ OTP
+                        setState(() => _isLoading = true);
+                        FirebaseFirestore.instance
+                            .collection('users')
+                            .doc(phone)
+                            .get()
+                            .then((doc) {
+                              setState(() => _isLoading = false);
+                              if (doc.exists) {
+                                setState(
+                                  () => _error = 'رقم الهاتف مسجل مسبقاً',
+                                );
+                                return;
+                              }
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => RegisterWithOtpPage(
+                                    name: username,
+                                    phone: phone,
+                                    province: province,
+                                    creditCard: creditCard,
+                                    password: password,
+                                    accountType: 'customer',
+                                  ),
+                                ),
+                              );
+                            })
+                            .catchError((e) {
+                              setState(() {
+                                _isLoading = false;
+                                _error = 'حدث خطأ: $e';
+                              });
+                            });
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF530405),
@@ -224,6 +252,7 @@ class _PhonePasswordRegisterScreenState
       await prefs.setString('user_name', name);
       await prefs.setString('account_type', 'customer');
       await prefs.setString('currentUserId', phone);
+      await prefs.setBool('is_logged_in', true);
 
       if (mounted) {
         // الانتقال للصفحة الرئيسية

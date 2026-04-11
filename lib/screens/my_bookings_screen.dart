@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../utils/chat_helper.dart';
 import '../models/booking_model.dart';
 import 'booking_screen.dart';
+import 'deposit_details_screen.dart';
+import 'deposit_receipt_screen.dart';
 
 class MyBookingsScreen extends StatefulWidget {
   const MyBookingsScreen({super.key});
@@ -126,6 +129,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
     final providerId = bookingData['providerId'] ?? '';
     // ignore: unused_local_variable
     final itemId = bookingData['itemId'] ?? '';
+    final currentStatus = bookingData['status']?.toString();
+    final providerCreditCard =
+        bookingData['providerCreditCard']?.toString() ?? '';
     final category = bookingData['category'] ?? '';
     final isCancelled = bookingData['isCancelled'] == true;
     final notes = bookingData['notes'];
@@ -319,6 +325,80 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                   style: TextStyle(fontSize: 14, color: Colors.grey[800]),
                 ),
               ],
+              // بانر حالة العربون داخل الدايلوج
+              if (currentStatus == 'awaiting_deposit') ...[
+                const Divider(height: 24),
+                if (bookingData['depositAwaitingAt'] != null)
+                  _DepositCountdownBanner(
+                    bookingId: bookingId,
+                    depositAwaitingAt:
+                        (bookingData['depositAwaitingAt'] as Timestamp)
+                            .toDate(),
+                    itemName: itemName,
+                    price: bookingData['price']?.toString() ?? '',
+                    providerCreditCard: providerCreditCard,
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[50],
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.amber[700]!),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.access_time,
+                          color: Colors.amber[700],
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'بانتظار إرسال العربون',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.amber[900],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ] else if (currentStatus == 'deposit_submitted') ...[
+                const Divider(height: 24),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.blue[300]!),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.pending_actions,
+                        color: Colors.blue[700],
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'تم إرسال تفاصيل العربون — بانتظار تأكيد المزود',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blue[900],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               if (isCancelled) ...[
                 Divider(height: 24),
                 Container(
@@ -366,7 +446,73 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
             onPressed: () => Navigator.pop(context),
             child: Text('إغلاق', style: TextStyle(fontSize: 16)),
           ),
-          if (!isCancelled && providerId.isNotEmpty)
+          if (currentStatus == 'awaiting_deposit')
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DepositDetailsScreen(
+                      bookingId: bookingId,
+                      providerCreditCard: providerCreditCard,
+                      itemName: itemName,
+                      price: bookingData['price']?.toString() ?? '',
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber[700],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              icon: const Icon(Icons.account_balance_wallet, size: 18),
+              label: const Text('تفاصيل العربون'),
+            )
+          else if (currentStatus == 'deposit_confirmed')
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DepositReceiptScreen(
+                      bookingId: bookingId,
+                      customerName:
+                          bookingData['customerName']?.toString() ?? '',
+                      basePrice:
+                          bookingData['price']?.toString() ??
+                          bookingData['basePrice']?.toString() ??
+                          '',
+                      depositAmount: (bookingData['depositAmount'] is num)
+                          ? (bookingData['depositAmount'] as num).toDouble()
+                          : double.tryParse(
+                                  bookingData['depositAmount']?.toString() ??
+                                      '',
+                                ) ??
+                                0,
+                      serialNumber: bookingData['serialNumber']?.toString(),
+                      itemName: itemName,
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[700],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              icon: const Icon(Icons.receipt_long, size: 18),
+              label: const Text('عرض الإيصال'),
+            )
+          else if (!isCancelled && providerId.isNotEmpty)
             ElevatedButton.icon(
               onPressed: () {
                 Navigator.pop(context);
@@ -413,6 +559,31 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
           color = Colors.blue;
           text = 'معدَّل';
           icon = Icons.edit;
+          break;
+        case 'awaiting_deposit':
+          color = Colors.amber[700]!;
+          text = 'بانتظار إرسال العربون';
+          icon = Icons.account_balance_wallet;
+          break;
+        case 'deposit_submitted':
+          color = Colors.blue[700]!;
+          text = 'تم إرسال العربون';
+          icon = Icons.pending_actions;
+          break;
+        case 'deposit_confirmed':
+          color = Colors.green;
+          text = 'تم تأكيد العربون';
+          icon = Icons.verified;
+          break;
+        case 'auto_cancelled':
+          color = Colors.red[700]!;
+          text = 'ملغى تلقائياً';
+          icon = Icons.cancel_schedule_send;
+          break;
+        case 'rejected':
+          color = Colors.red;
+          text = 'مرفوض';
+          icon = Icons.cancel;
           break;
         case 'pending':
         case 'بانتظار التأكيد':
@@ -870,6 +1041,131 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                   ),
                                 ],
 
+                                // بانر العربون
+                                Builder(
+                                  builder: (context) {
+                                    final currentStatus = bookingData['status']
+                                        ?.toString();
+                                    if (currentStatus == 'awaiting_deposit') {
+                                      DateTime? depositAwaitingAt;
+                                      if (bookingData['depositAwaitingAt'] !=
+                                          null) {
+                                        depositAwaitingAt =
+                                            (bookingData['depositAwaitingAt']
+                                                    as Timestamp)
+                                                .toDate();
+                                      }
+                                      if (depositAwaitingAt != null) {
+                                        return _DepositCountdownBanner(
+                                          bookingId: bookingDoc.id,
+                                          depositAwaitingAt: depositAwaitingAt,
+                                          itemName: itemName,
+                                          price: price.toString(),
+                                          providerCreditCard:
+                                              bookingData['providerCreditCard']
+                                                  ?.toString() ??
+                                              '',
+                                        );
+                                      }
+                                      // بيانات قديمة بدون وقت — عرض زر فقط
+                                      return Column(
+                                        children: [
+                                          const SizedBox(height: 8),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: ElevatedButton.icon(
+                                              onPressed: () {
+                                                Navigator.push(
+                                                  context,
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        DepositDetailsScreen(
+                                                          bookingId:
+                                                              bookingDoc.id,
+                                                          providerCreditCard:
+                                                              bookingData['providerCreditCard']
+                                                                  ?.toString() ??
+                                                              '',
+                                                          itemName: itemName,
+                                                          price: price
+                                                              .toString(),
+                                                        ),
+                                                  ),
+                                                );
+                                              },
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    Colors.amber[700],
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      vertical: 10,
+                                                    ),
+                                              ),
+                                              icon: const Icon(
+                                                Icons.account_balance_wallet,
+                                                size: 18,
+                                              ),
+                                              label: const Text(
+                                                'تفاصيل العربون',
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    } else if (currentStatus ==
+                                        'deposit_submitted') {
+                                      return Column(
+                                        children: [
+                                          const SizedBox(height: 8),
+                                          Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: Colors.blue[50],
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: Colors.blue[300]!,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.pending_actions,
+                                                  color: Colors.blue[700],
+                                                  size: 18,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Expanded(
+                                                  child: Text(
+                                                    'تم إرسال تفاصيل العربون — بانتظار تأكيد المزود',
+                                                    style: TextStyle(
+                                                      fontSize: 13,
+                                                      color: Colors.blue[900],
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    }
+                                    return const SizedBox.shrink();
+                                  },
+                                ),
+
                                 // السعر
                                 if (price.isNotEmpty) ...[
                                   const SizedBox(height: 6),
@@ -1072,6 +1368,70 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
                                         ),
                                       ),
                                     ],
+                                    // زر عرض الإيصال عند تأكيد العربون
+                                    if (bookingData['status'] ==
+                                        'deposit_confirmed') ...[
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => DepositReceiptScreen(
+                                                  bookingId: bookingDoc.id,
+                                                  customerName:
+                                                      bookingData['customerName']
+                                                          ?.toString() ??
+                                                      '',
+                                                  basePrice:
+                                                      bookingData['price']
+                                                          ?.toString() ??
+                                                      bookingData['basePrice']
+                                                          ?.toString() ??
+                                                      '',
+                                                  depositAmount:
+                                                      (bookingData['depositAmount']
+                                                          is num)
+                                                      ? (bookingData['depositAmount']
+                                                                as num)
+                                                            .toDouble()
+                                                      : double.tryParse(
+                                                              bookingData['depositAmount']
+                                                                      ?.toString() ??
+                                                                  '',
+                                                            ) ??
+                                                            0,
+                                                  serialNumber:
+                                                      bookingData['serialNumber']
+                                                          ?.toString(),
+                                                  itemName: itemName,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.green[700],
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 10,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          icon: const Icon(
+                                            Icons.receipt_long,
+                                            size: 18,
+                                          ),
+                                          label: const Text(
+                                            'الإيصال',
+                                            style: TextStyle(fontSize: 14),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ],
@@ -1087,6 +1447,193 @@ class _MyBookingsScreenState extends State<MyBookingsScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── عداد تنازلي للعربون ──────────────────────────────────────────────────────
+class _DepositCountdownBanner extends StatefulWidget {
+  final String bookingId;
+  final DateTime depositAwaitingAt;
+  final String itemName;
+  final String price;
+  final String providerCreditCard;
+
+  /// مدة المهلة (افتراضي 24 ساعة)
+  final Duration deadline;
+
+  const _DepositCountdownBanner({
+    required this.bookingId,
+    required this.depositAwaitingAt,
+    required this.itemName,
+    required this.price,
+    required this.providerCreditCard,
+    this.deadline = const Duration(hours: 24),
+  });
+
+  @override
+  State<_DepositCountdownBanner> createState() =>
+      _DepositCountdownBannerState();
+}
+
+class _DepositCountdownBannerState extends State<_DepositCountdownBanner> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+  bool _autoCancelled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _update();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _update());
+  }
+
+  void _update() {
+    final deadline = widget.depositAwaitingAt.add(widget.deadline);
+    final diff = deadline.difference(DateTime.now());
+    if (!mounted) return;
+    if (diff.isNegative || diff.inSeconds == 0) {
+      setState(() => _remaining = Duration.zero);
+      if (!_autoCancelled) {
+        _autoCancelled = true;
+        _autoCancel();
+      }
+    } else {
+      setState(() => _remaining = diff);
+    }
+  }
+
+  Future<void> _autoCancel() async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(widget.bookingId)
+          .update({
+            'status': 'auto_cancelled',
+            'isCancelled': true,
+            'cancelledAt': FieldValue.serverTimestamp(),
+            'cancellationReason': 'انتهاء مهلة إرسال العربون',
+          });
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _fmt(Duration d) {
+    final h = d.inHours.toString().padLeft(2, '0');
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final expired = _remaining == Duration.zero;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: expired ? Colors.red[50] : Colors.amber[50],
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: expired ? Colors.red[400]! : Colors.amber[700]!,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    expired ? Icons.cancel_schedule_send : Icons.timer,
+                    color: expired ? Colors.red[700] : Colors.amber[800],
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      expired
+                          ? 'انتهت مهلة إرسال العربون — تم إلغاء الحجز تلقائياً'
+                          : 'يجب إرسال العربون قبل انتهاء المهلة، وإلا سيتم إلغاء الحجز تلقائياً',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: expired ? Colors.red[900] : Colors.amber[900],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (!expired) ...[
+                const SizedBox(height: 10),
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber[700],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _fmt(_remaining),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        if (!expired) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DepositDetailsScreen(
+                      bookingId: widget.bookingId,
+                      providerCreditCard: widget.providerCreditCard,
+                      itemName: widget.itemName,
+                      price: widget.price,
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.amber[700],
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              icon: const Icon(Icons.account_balance_wallet, size: 18),
+              label: const Text(
+                'تفاصيل العربون',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

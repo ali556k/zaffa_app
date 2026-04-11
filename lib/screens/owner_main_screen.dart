@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'admin_screen.dart';
 import 'admin_provider_requests_screen.dart';
+import 'admin_bookings_screen.dart';
 import 'owner_chats_screen.dart';
 
 /// شاشة المالك الرئيسية مع شريط تنقل سفلي
@@ -17,6 +18,7 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
   final List<Widget> _screens = const [
     AdminScreen(), // إدارة الخدمات
     AdminProviderRequestsScreen(), // طلبات المزودين
+    AdminBookingsScreen(), // الحجوزات
     OwnerChatsScreen(), // المحادثات
   ];
 
@@ -79,6 +81,10 @@ class _OwnerMainScreenState extends State<OwnerMainScreen> {
                 BottomNavigationBarItem(
                   icon: Icon(Icons.assignment),
                   label: 'الطلبات',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.book_online),
+                  label: 'الحجوزات',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.chat),

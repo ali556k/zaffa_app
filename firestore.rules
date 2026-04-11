@@ -1,76 +1,176 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // قواعد للمستخدمين
-    match /users/{userId} {
-      allow read, write: if request.auth != null || true; // السماح مؤقتاً للاختبار
-    }
-    
-    // قواعد للخدمات
-    match /services/{serviceId} {
-      allow read: if true;
-      allow write: if request.auth != null || true;
-    }
-    
-    // قواعد للخدمات المعتمدة
-    match /approved_services/{serviceId} {
-      allow read: if true;
-      allow write: if request.auth != null || true;
-    }
-    
-    // قواعد للخدمات المعلقة
-    match /pending_services/{serviceId} {
-      allow read, write: if request.auth != null || true;
-    }
-    
-    // قواعد للجلسات
+
+    // ======================================================
+    // ملاحظة: التطبيق يستخدم مصادقة مخصصة (BCrypt + sessions)
+    // وليس Firebase Auth، لذلك request.auth دائماً null.
+    // القواعد أدناه مفتوحة للقراءة والكتابة مع حماية أساسية
+    // بمنع الحذف على البيانات الحساسة.
+    // ======================================================
+
+    // الجلسات - مفتوحة بالكامل (تسجيل الدخول والخروج)
     match /sessions/{sessionId} {
-      allow read, write: if request.auth != null || true;
+      allow read, write: if true;
     }
-    
-    // قواعد لطلبات مزودي الخدمة
-    match /provider_requests/{requestId} {
-      allow read, write: if request.auth != null || true;
-    }
-    
-    // قواعد للحجوزات
-    match /bookings/{bookingId} {
-      allow read, write: if request.auth != null || true;
-    }
-    
-    // قواعد لمحاولات تسجيل الدخول
+
+    // محاولات تسجيل الدخول
     match /login_attempts/{attemptId} {
-      allow read, write: if request.auth != null || true;
+      allow read, create, update, delete: if true;
     }
-    
-    // قواعد لعناصر الخدمة
-    match /service_items/{itemId} {
-      allow read: if true;
-      allow write: if request.auth != null || true;
+
+    // المستخدمون - قراءة وكتابة مفتوحة، حذف محمي
+    match /users/{userId} {
+      allow read, create, update: if true;
+      allow delete: if false;
     }
-    
-    // قواعد لعناصر الخدمة المعلقة
-    match /pending_service_items/{itemId} {
-      allow read, write: if request.auth != null || true;
-    }
-    
-    // قواعد لمزودي الخدمة
+
+    // مزودو الخدمة
     match /providers/{providerId} {
-      allow read, write: if request.auth != null || true;
+      allow read, create, update: if true;
+      allow delete: if false;
     }
-    
-    // قواعد للرسائل والدردشة
+
+    match /provider_requests/{requestId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /provider_services/{serviceId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /provider_items/{itemId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // المنشورات العامة
+    match /published_providers/{providerId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /published_items/{itemId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // الحجوزات
+    match /bookings/{bookingId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /orders/{orderId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /item_bookings/{bookingId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /booking_updates/{updateId} {
+      allow read, write: if true;
+    }
+
+    // الخدمات والعناصر - حذف محمي للبيانات الرئيسية
+    match /services/{serviceId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    match /items/{itemId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    match /service_items/{itemId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /pending_service_items/{itemId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /approved_services/{serviceId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /pending_services/{serviceId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // الدردشة والرسائل
     match /chats/{chatId} {
-      allow read, write: if request.auth != null || true;
+      allow read, create, update, delete: if true;
+
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
     }
-    
+
     match /messages/{messageId} {
-      allow read, write: if request.auth != null || true;
+      allow read, write: if true;
     }
-    
-    // السماح بجميع المجموعات الأخرى مؤقتاً للاختبار
+
+    // الإشعارات
+    match /notifications/{notificationId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /fcm_notifications/{notificationId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // الإدارة
+    match /admin_requests/{requestId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /service_requests/{requestId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /hall/{docId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // العملاء
+    match /customers/{customerId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // إتاحة المواعيد
+    match /items_availability/{itemId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // المفضلة
+    match /favorites/{favoriteId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // التقييمات والمراجعات
+    match /ratings/{ratingId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /reviews/{reviewId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // مشاركة الروابط
+    match /shared_links/{linkId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /shares/{shareId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // ======================================================
+    // قاعدة شاملة: تغطي جميع المجموعات الأخرى
+    // (بما فيها أسماء المجموعات العربية الديناميكية)
+    // ======================================================
     match /{document=**} {
-      allow read, write: if true; // مؤقت للاختبار فقط
+      allow read, write: if true;
     }
   }
 }
+

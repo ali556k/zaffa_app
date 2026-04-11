@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../utils/price_formatter.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../models/booking_model.dart';
@@ -47,8 +45,6 @@ class _BookingScreenState extends State<BookingScreen> {
   TimeOfDay? selectedStartTime;
   TimeOfDay? selectedEndTime;
   bool isLoading = false;
-  File? receiptImage;
-  String? receiptUrl;
   final picker = ImagePicker();
   final TextEditingController _detailsController = TextEditingController();
   final TextEditingController _deliveryAddressController =
@@ -81,6 +77,11 @@ class _BookingScreenState extends State<BookingScreen> {
   // subscriptions لإدارتها وإلغائها بشكل صحيح
   StreamSubscription? _calendarSub;
   StreamSubscription? _slotsSub;
+  StreamSubscription? _providerDocSub;
+
+  // الأيام والفترات المحجوبة يدوياً من مزود الخدمة
+  Set<String> _providerBlockedDates = {};
+  List<String> _providerBlockedTimeSlots = [];
 
   // حساب السعر النهائي للتصوير بناءً على عدد الساعات
   double _calculateFinalPrice() {
@@ -256,6 +257,7 @@ class _BookingScreenState extends State<BookingScreen> {
     // الاستماع لتحديثات الحجوزات فقط للخدمات القابلة للحجز
     if (_isBookableService) {
       _listenToBookingUpdates();
+      _listenToProviderBlockedDates();
     }
   }
 
@@ -263,6 +265,7 @@ class _BookingScreenState extends State<BookingScreen> {
   void dispose() {
     _calendarSub?.cancel();
     _slotsSub?.cancel();
+    _providerDocSub?.cancel();
     _detailsController.dispose();
     _deliveryAddressController.dispose();
     super.dispose();
@@ -316,7 +319,11 @@ class _BookingScreenState extends State<BookingScreen> {
         )
         .handleError((e) => print('❌ خطأ في stream التقويم: $e'))
         .listen((statusMap) {
-          if (mounted) setState(() => _dayStatusMap = statusMap);
+          if (mounted) {
+            setState(() {
+              _dayStatusMap = _applyProviderBlockedDates(statusMap);
+            });
+          }
         });
 
     // الاستماع للأوقات المحجوزة في اليوم المحدد
@@ -340,6 +347,92 @@ class _BookingScreenState extends State<BookingScreen> {
       _focusedDay = focusedDay;
     });
     _listenToBookingUpdates();
+  }
+
+  /// الاستماع لتغييرات الأيام المحجوبة من مزود الخدمة في الوقت الفعلي
+  Future<void> _listenToProviderBlockedDates() async {
+    final providerId = widget.serviceData['providerId'] ?? '';
+    if (providerId.isEmpty) return;
+
+    _providerDocSub?.cancel();
+
+    // تحديد المجموعة التي يوجد فيها مزود الخدمة
+    String collection = 'published_providers';
+    try {
+      final pubDoc = await FirebaseFirestore.instance
+          .collection('published_providers')
+          .doc(providerId)
+          .get();
+      if (!pubDoc.exists) {
+        collection = 'provider_requests';
+      }
+    } catch (e) {
+      print('⚠️ خطأ في تحديد مجموعة المزود: $e');
+    }
+
+    _providerDocSub = FirebaseFirestore.instance
+        .collection(collection)
+        .doc(providerId)
+        .snapshots()
+        .listen((doc) {
+          if (doc.exists && mounted) {
+            final data = doc.data()!;
+            setState(() {
+              _providerBlockedDates = Set<String>.from(
+                List<String>.from(data['blockedDates'] ?? []),
+              );
+              _providerBlockedTimeSlots = List<String>.from(
+                data['blockedTimeSlots'] ?? [],
+              );
+              // دمج الأيام المحجوبة مع خريطة حالة التقويم الحالية
+              _dayStatusMap = _applyProviderBlockedDates(
+                Map<DateTime, DayStatus>.from(_dayStatusMap),
+              );
+            });
+          }
+        });
+  }
+
+  /// دمج الأيام المحجوبة من المزود مع خريطة حالة التقويم
+  Map<DateTime, DayStatus> _applyProviderBlockedDates(
+    Map<DateTime, DayStatus> baseMap,
+  ) {
+    final merged = Map<DateTime, DayStatus>.from(baseMap);
+
+    // إضافة الأيام المحجوبة بالكامل (تأخذ أولوية على الحالات الأخرى)
+    for (final dateStr in _providerBlockedDates) {
+      final parts = dateStr.split('-');
+      if (parts.length == 3) {
+        final y = int.tryParse(parts[0]);
+        final m = int.tryParse(parts[1]);
+        final d = int.tryParse(parts[2]);
+        if (y != null && m != null && d != null) {
+          merged[DateTime(y, m, d)] = DayStatus.fullyBooked;
+        }
+      }
+    }
+
+    // إضافة الفترات المحجوبة جزئياً (إن لم يكن اليوم محجوباً كاملاً)
+    for (final slotKey in _providerBlockedTimeSlots) {
+      final colonIdx = slotKey.indexOf(':');
+      if (colonIdx != -1) {
+        final dateStr = slotKey.substring(0, colonIdx);
+        final parts = dateStr.split('-');
+        if (parts.length == 3) {
+          final y = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+          final d = int.tryParse(parts[2]);
+          if (y != null && m != null && d != null) {
+            final date = DateTime(y, m, d);
+            if (merged[date] != DayStatus.fullyBooked) {
+              merged[date] = DayStatus.partiallyBooked;
+            }
+          }
+        }
+      }
+    }
+
+    return merged;
   }
 
   /// تحديث الاستماع عند اختيار يوم
@@ -378,6 +471,24 @@ class _BookingScreenState extends State<BookingScreen> {
         _showFullyBookedDialog();
       }
     }
+  }
+
+  /// استخراج الفترات المحجوبة من المزود ليوم محدد
+  List<String> _getProviderBlockedSlotsForDay(DateTime day) {
+    final dateKey =
+        '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+    final result = <String>[];
+    for (final slotKey in _providerBlockedTimeSlots) {
+      final colonIdx = slotKey.indexOf(':');
+      if (colonIdx != -1) {
+        final datePart = slotKey.substring(0, colonIdx);
+        final timePart = slotKey.substring(colonIdx + 1);
+        if (datePart == dateKey && timePart.isNotEmpty) {
+          result.add(timePart);
+        }
+      }
+    }
+    return result;
   }
 
   /// عرض نافذة الأوقات المحجوزة
@@ -431,41 +542,69 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            if (_bookedTimeSlotsForSelectedDay.isEmpty)
-              const Text('لا توجد أوقات محجوزة')
-            else
-              ..._bookedTimeSlotsForSelectedDay.map((slot) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Colors.red.withOpacity(0.3),
-                      width: 1.5,
-                    ),
+            // فترات من حجوزات الزبائن
+            ..._bookedTimeSlotsForSelectedDay.map((slot) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.red.withOpacity(0.3),
+                    width: 1.5,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.access_time,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.access_time, color: Colors.red, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'من ${slot.startTime} إلى ${slot.endTime}',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                         color: Colors.red,
-                        size: 20,
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'من ${slot.startTime} إلى ${slot.endTime}',
+                    ),
+                  ],
+                ),
+              );
+            }),
+            // فترات محجوبة يدوياً من المزود
+            ..._getProviderBlockedSlotsForDay(day).map((slotLabel) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.orange.withOpacity(0.3),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.block, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'محجوز: $slotLabel',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: Colors.red,
+                          color: Colors.orange,
                         ),
                       ),
-                    ],
-                  ),
-                );
-              }),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            if (_bookedTimeSlotsForSelectedDay.isEmpty &&
+                _getProviderBlockedSlotsForDay(day).isEmpty)
+              const Text('لا توجد أوقات محجوزة'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -565,7 +704,6 @@ class _BookingScreenState extends State<BookingScreen> {
       selectedDate = null;
       selectedStartTime = null;
       selectedEndTime = null;
-      receiptImage = null;
       _isFullDayBooking = true;
       isDateTimeConflict = false;
       _detailsController.clear();
@@ -1083,48 +1221,6 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
-  Future<void> _pickReceiptImage() async {
-    try {
-      final pickedFile = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 70,
-        maxWidth: 1024,
-        maxHeight: 1024,
-      );
-      if (pickedFile != null) {
-        setState(() {
-          receiptImage = File(pickedFile.path);
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('خطأ في اختيار الصورة: $e')));
-    }
-  }
-
-  Future<String?> _uploadReceiptImage() async {
-    if (receiptImage == null) return null;
-    try {
-      final fileName = DateTime.now().millisecondsSinceEpoch.toString();
-      final ref = FirebaseStorage.instance.ref().child('receipts/$fileName');
-      final uploadTask = ref.putFile(receiptImage!);
-      final snapshot = await uploadTask;
-      final url = await snapshot.ref.getDownloadURL();
-
-      // تحرير الملف المؤقت بعد الرفع
-      try {
-        await receiptImage!.delete();
-      } catch (e) {
-        print('لا يمكن حذف الملف المؤقت: $e');
-      }
-
-      return url;
-    } catch (e) {
-      throw Exception('فشل في رفع صورة الإيصال: $e');
-    }
-  }
-
   Future<void> _bookService() async {
     // التحقق مما إذا كان المستخدم ضيفاً
     final prefs = await SharedPreferences.getInstance();
@@ -1207,15 +1303,6 @@ class _BookingScreenState extends State<BookingScreen> {
         );
         return;
       }
-    }
-
-    // في وضع التعديل لا نشترط رفع إيصال جديد (الإيصال الأصلي محفوظ مسبقاً)
-    if (receiptImage == null && !widget.isEditMode) {
-      _showErrorDialog(
-        'إيصال الدفع مطلوب',
-        'يرجى رفع صورة إيصال الدفع لتأكيد الحجز',
-      );
-      return;
     }
 
     // التحقق من التضارب في الوقت
@@ -1345,9 +1432,6 @@ class _BookingScreenState extends State<BookingScreen> {
           ? userDisplayName
           : (prefs.getString('user_name') ?? 'مستخدم');
 
-      // رفع صورة الإيصال
-      final receiptUrl = await _uploadReceiptImage();
-
       // إنشاء نموذج الحجز
       final booking = BookingModel(
         itemId: widget.serviceData['id'] ?? '',
@@ -1372,6 +1456,20 @@ class _BookingScreenState extends State<BookingScreen> {
       // تحقق نهائي من إمكانية الحجز قبل الحجز (لمنع race conditions)
       // فقط للخدمات القابلة للحجز
       if (_isBookableService) {
+        // التحقق من أن التاريخ ليس محجوباً يدوياً من المزود
+        final selectedDateKey =
+            '${bookingDate.year}-${bookingDate.month.toString().padLeft(2, '0')}-${bookingDate.day.toString().padLeft(2, '0')}';
+        if (_providerBlockedDates.contains(selectedDateKey)) {
+          setState(() => isLoading = false);
+          if (mounted) {
+            _showErrorDialog(
+              'هذا التاريخ غير متاح',
+              'قام مزود الخدمة بحجب هذا التاريخ. يرجى اختيار تاريخ آخر.',
+            );
+          }
+          return;
+        }
+
         final canBookCheck = await _calendarService.canBook(
           itemId: widget.serviceData['id'] ?? '',
           date: bookingDate,
@@ -1404,15 +1502,17 @@ class _BookingScreenState extends State<BookingScreen> {
       final finalPrice = _calculateFinalPrice();
       final finalPriceString = '${_formatPrice(finalPrice)} د.ع';
 
-      // إضافة receiptUrl وstatus وprice للحجز
+      // إضافة status وprice للحجز
       await FirebaseFirestore.instance
           .collection('bookings')
           .doc(bookingId)
           .update({
-            'receiptUrl': receiptUrl,
             'status': 'pending',
             'price': finalPriceString,
             'basePrice': itemPrice, // السعر الأساسي
+            'serialNumber':
+                (1000000 + (DateTime.now().millisecondsSinceEpoch % 9000000))
+                    .toString(), // رقم تسلسلي 7 أرقام
             'hoursBooked':
                 widget.serviceData['category'] == 'photography' &&
                     !_isFullDayBooking
@@ -1723,14 +1823,6 @@ class _BookingScreenState extends State<BookingScreen> {
           _buildDateTimeSelectionCard(),
           const SizedBox(height: 20),
 
-          // معلومات الدفع
-          _buildPaymentInfoCard(),
-          const SizedBox(height: 20),
-
-          // رفع إيصال الدفع
-          _buildReceiptUploadCard(),
-          const SizedBox(height: 20),
-
           // حقل تفاصيل الحجز (اختياري)
           _buildBookingDetailsCard(),
           const SizedBox(height: 30),
@@ -1802,16 +1894,16 @@ class _BookingScreenState extends State<BookingScreen> {
                               color: isAvailable ? Colors.green : Colors.red,
                             ),
                           ),
+                          if (!isAvailable) ...[                          
                           const SizedBox(height: 4),
                           Text(
-                            isAvailable
-                                ? 'يمكنك التواصل مع مزود الخدمة لإتمام الحجز'
-                                : 'هذا العنصر غير متوفر في الوقت الحالي. يرجى التحقق لاحقاً أو التواصل مع مزود الخدمة',
+                            'هذا العنصر غير متوفر في الوقت الحالي. يرجى التحقق لاحقاً أو التواصل مع مزود الخدمة',
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.grey[700],
                             ),
                           ),
+                          ],
                         ],
                       ),
                     ),
@@ -1820,17 +1912,9 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
               const SizedBox(height: 20),
 
-              // معلومات الدفع
-              _buildPaymentInfoCard(),
-              const SizedBox(height: 20),
-
               if (isAvailable) ...[
-                // حقل التوصيل إلى (قبل الإيصال ليراه الزبون أولاً)
+                // حقل التوصيل إلى
                 _buildDeliveryCard(),
-                const SizedBox(height: 20),
-
-                // رفع إيصال الدفع
-                _buildReceiptUploadCard(),
                 const SizedBox(height: 20),
 
                 // حقل تفاصيل الحجز
@@ -2094,6 +2178,125 @@ class _BookingScreenState extends State<BookingScreen> {
             // للخدمات الأخرى أو الحجز الكامل: عرض السعر العادي
             _buildInfoRow('السعر', itemPrice, Icons.attach_money),
           ],
+
+          // ── الخدمات الضمنية (للقاعات) ──
+          Builder(
+            builder: (context) {
+              final rawServices = widget.serviceData['includedServices'];
+              if (rawServices == null) return const SizedBox.shrink();
+              final List services = rawServices is List ? rawServices : [];
+              if (services.isEmpty) return const SizedBox.shrink();
+
+              double total = 0;
+              for (final s in services) {
+                total += double.tryParse(s['price']?.toString() ?? '0') ?? 0;
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981).withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: const Color(0xFF10B981).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              color: Color(0xFF10B981),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'الخدمات الضمنية (${services.length})',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF10B981),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        ...services.map((s) {
+                          final name = s['name']?.toString() ?? '';
+                          final priceVal = s['price'];
+                          final price = priceVal != null
+                              ? double.tryParse(priceVal.toString())
+                              : null;
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.fiber_manual_record,
+                                  size: 8,
+                                  color: Color(0xFF10B981),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                if (price != null && price > 0)
+                                  Text(
+                                    '${price.toStringAsFixed(price.truncateToDouble() == price ? 0 : 2)} د.ع',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF374151),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        }),
+                        if (total > 0) ...[
+                          const Divider(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Flexible(
+                                child: Text(
+                                  'مجموع الخدمات الضمنية:',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF10B981),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${total.toStringAsFixed(total.truncateToDouble() == total ? 0 : 2)} د.ع',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF10B981),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
@@ -2665,119 +2868,6 @@ class _BookingScreenState extends State<BookingScreen> {
     );
   }
 
-  // كارت رفع الإيصال
-  Widget _buildReceiptUploadCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 2,
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6B46C1).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.receipt,
-                  color: Color(0xFF6B46C1),
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 16),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'إيصال الدفع',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1F2937),
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'ارفع صورة إيصال الدفع',
-                      style: TextStyle(fontSize: 14, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          // عرض الصورة أو زر الاختيار
-          if (receiptImage != null) ...[
-            Container(
-              width: double.infinity,
-              height: 200,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: const Color(0xFF6B46C1).withOpacity(0.3),
-                  width: 2,
-                ),
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.file(receiptImage!, fit: BoxFit.cover),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          // زر اختيار/تغيير الصورة
-          SizedBox(
-            width: double.infinity,
-            height: 56,
-            child: ElevatedButton.icon(
-              onPressed: _pickReceiptImage,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: receiptImage == null
-                    ? const Color(0xFF6B46C1)
-                    : Colors.orange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-              ),
-              icon: Icon(
-                receiptImage == null ? Icons.upload_file : Icons.edit,
-                size: 24,
-              ),
-              label: Text(
-                receiptImage == null ? 'اختيار صورة الإيصال' : 'تغيير الصورة',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // كارت تفاصيل الحجز (اختياري)
   Widget _buildBookingDetailsCard() {
     return Container(
@@ -2922,7 +3012,7 @@ class _BookingScreenState extends State<BookingScreen> {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'حدد مكان التوصيل (اختياري)',
+                      'حدد مكان التوصيل',
                       style: TextStyle(fontSize: 14, color: Colors.grey),
                     ),
                   ],
@@ -3064,12 +3154,9 @@ class _BookingScreenState extends State<BookingScreen> {
     // للخدمات غير القابلة للحجز: التاريخ اختياري (سيُستخدم التاريخ الحالي تلقائياً)
     bool canBook;
     if (_isBookableService) {
-      // الخدمات القابلة للحجز تحتاج تاريخ محدد
-      canBook =
-          selectedDate != null && receiptImage != null && !isDateTimeConflict;
+      canBook = selectedDate != null && !isDateTimeConflict;
     } else {
-      // الخدمات غير القابلة للحجز لا تحتاج تاريخ
-      canBook = receiptImage != null;
+      canBook = true;
     }
 
     // إذا كان الحجز جزئي، يجب تحديد الأوقات
@@ -3091,8 +3178,11 @@ class _BookingScreenState extends State<BookingScreen> {
     if (!_isFullDayBooking && selectedEndTime == null) {
       warnings.add('⚠️ يرجى اختيار وقت النهاية');
     }
-    if (receiptImage == null) warnings.add('⚠️ يرجى رفع إيصال الدفع');
     if (isDateTimeConflict) warnings.add('⚠️ يوجد تضارب في التاريخ/الوقت');
+    if (_deliveryAddressController.text.trim().isEmpty) {
+      canBook = false;
+      warnings.add('⚠️ يرجى إدخال عنوان التوصيل');
+    }
     if (itemPrice == '0 د.ع' || itemPrice == 'يحدد لاحقاً') {
       warnings.add('⚠️ السعر غير محدد، تواصل مع مزود الخدمة');
     }

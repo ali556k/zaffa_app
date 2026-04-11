@@ -197,6 +197,7 @@ class _RegisterWithOtpPageState extends State<RegisterWithOtpPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_phone', widget.phone);
       await prefs.setString('account_type', widget.accountType ?? 'customer');
+      await prefs.setBool('is_logged_in', true);
 
       if (widget.accountType != 'provider') {
         // إذا كان عميل عادي، إنشاء جلسة نشطة
@@ -232,6 +233,12 @@ class _RegisterWithOtpPageState extends State<RegisterWithOtpPage> {
     }
   }
 
+  String _fmtTimer() {
+    final m = (_secondsLeft ~/ 60).toString().padLeft(2, '0');
+    final s = (_secondsLeft % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
   void _showOtpModal() {
     showDialog(
       context: context,
@@ -239,89 +246,201 @@ class _RegisterWithOtpPageState extends State<RegisterWithOtpPage> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return AlertDialog(
+            // مزامنة الثواني مع الـ StatefulBuilder
+            void syncState() {
+              if (ctx.mounted) setModalState(() {});
+            }
+
+            _otpTimer?.cancel();
+            _otpTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+              if (_secondsLeft > 0) {
+                setState(() => _secondsLeft--);
+                syncState();
+              } else {
+                t.cancel();
+                syncState();
+              }
+            });
+
+            return Dialog(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(24),
               ),
-              title: const Text(
-                'التحقق من رقم الهاتف',
-                textAlign: TextAlign.center,
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('تم إرسال رمز التحقق إلى'),
-                  const SizedBox(height: 8),
-                  Text(
-                    _otpPhone ?? 'رقم الهاتف',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'يرجى إدخال الرمز المرسل إلى هاتفك:',
-                    style: TextStyle(fontSize: 14),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _otpController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'رمز التحقق',
-                      border: OutlineInputBorder(),
-                      hintText: 'ادخل الرمز المكون من 6 أرقام',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_secondsLeft > 0)
-                    Text(
-                      'الوقت المتبقي: $_secondsLeft ثانية',
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  if (_registerError != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        _registerError!,
-                        style: const TextStyle(color: Colors.red),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // أيقونة
+                    Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6E1229).withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.mark_email_unread_rounded,
+                        color: Color(0xFF6E1229),
+                        size: 36,
                       ),
                     ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _isLoading ? null : _verifyOtpAndRegister,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'أدخل رمز التحقق',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1F2937),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'تم إرسال الرمز إلى\n${_otpPhone ?? widget.phone}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 20),
+                    // حقل إدخال الرمز
+                    TextField(
+                      controller: _otpController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 4,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 10,
+                        color: Color(0xFF6E1229),
+                      ),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        hintText: '----',
+                        hintStyle: const TextStyle(
+                          letterSpacing: 10,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF6E1229).withOpacity(0.05),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF6E1229),
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // عداد
+                    _secondsLeft > 0
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.timer_outlined,
+                                size: 16,
+                                color: _secondsLeft < 60
+                                    ? Colors.red
+                                    : Colors.grey,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'صلاحية الرمز: ${_fmtTimer()}',
+                                style: TextStyle(
+                                  color: _secondsLeft < 60
+                                      ? Colors.red
+                                      : Colors.grey[600],
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          )
+                        : TextButton.icon(
+                            onPressed: _isLoading ? null : _sendOtp,
+                            icon: const Icon(
+                              Icons.refresh,
+                              size: 16,
+                              color: Color(0xFF6E1229),
+                            ),
+                            label: const Text(
+                              'إعادة إرسال الرمز',
+                              style: TextStyle(color: Color(0xFF6E1229)),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text('تحقق OTP'),
+                    // رسالة الخطأ
+                    if (_registerError != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.red[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red[200]!),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _registerError!,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ),
-                  TextButton(
-                    onPressed: _secondsLeft == 0 && !_isLoading
-                        ? _sendOtp
-                        : null,
-                    child: const Text('إعادة إرسال الرمز'),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    // زر التحقق
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: _isLoading ? null : _verifyOtpAndRegister,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF6E1229),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          elevation: 0,
+                        ),
+                        icon: _isLoading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.verified_outlined, size: 20),
+                        label: Text(
+                          _isLoading ? 'جاري التحقق...' : 'تحقق وأكمل التسجيل',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             );
           },
@@ -373,80 +492,197 @@ class _RegisterWithOtpPageState extends State<RegisterWithOtpPage> {
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('التحقق من رقم الهاتف'),
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
+        title: const Text(
+          'التحقق من رقم الهاتف',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: const Color(0xFF6E1229),
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+        ),
       ),
       body: Center(
         child: SingleChildScrollView(
-          child: Container(
-            width: width > 500 ? 400 : width * 0.95,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.07),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.phone_android, size: 64, color: Colors.teal),
-                const SizedBox(height: 16),
-                const Text(
-                  'تم إرسال رمز التحقق',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'إلى رقم: ${widget.phone}',
-                  style: const TextStyle(fontSize: 16, color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                if (_isLoading)
-                  const Column(
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('جاري إرسال الرمز...'),
-                    ],
-                  )
-                else if (_otpError != null)
-                  Column(
-                    children: [
-                      Text(
-                        _otpError!,
-                        style: const TextStyle(color: Colors.red),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _sendOtp,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.teal,
-                        ),
-                        child: const Text('إعادة الإرسال'),
-                      ),
-                    ],
-                  )
-                else
-                  const Text(
-                    'يرجى انتظار وصول الرسالة',
-                    style: TextStyle(color: Colors.grey),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+              // أيقونة رئيسية
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6E1229), Color(0xFF9C1B3A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-              ],
-            ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6E1229).withOpacity(0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.verified_user_rounded,
+                  color: Colors.white,
+                  size: 50,
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'التحقق من رقم الهاتف',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1F2937),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'سيتم إرسال رمز التحقق إلى\n${widget.phone}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey,
+                  height: 1.6,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 32),
+              // بطاقة الحالة
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.08),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: _isLoading
+                    ? const Column(
+                        children: [
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF6E1229),
+                              strokeWidth: 3,
+                            ),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'جاري إرسال رمز التحقق...',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: Color(0xFF6E1229),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      )
+                    : _otpError != null
+                    ? Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.red[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.red[200]!),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.error_outline,
+                                  color: Colors.red,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    _otpError!,
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              onPressed: _sendOtp,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6E1229),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text(
+                                'إعادة الإرسال',
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.green[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.green[200]!),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(
+                                  Icons.check_circle_outline,
+                                  color: Colors.green,
+                                ),
+                                SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'تم الإرسال! ستصل الرسالة خلال لحظات عبر WhatsApp أو SMS',
+                                    style: TextStyle(
+                                      color: Colors.green,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'سيظهر نافذة لإدخال الرمز تلقائياً',
+                            style: TextStyle(color: Colors.grey, fontSize: 13),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
           ),
         ),
       ),

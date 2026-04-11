@@ -6,7 +6,6 @@ import 'booking_screen.dart';
 import '../utils/chat_helper.dart';
 import '../utils/image_utils.dart';
 import '../models/booking_model.dart';
-import '../services/share_service.dart';
 import '../services/favorite_service.dart';
 import '../widgets/image_viewer.dart';
 
@@ -340,29 +339,6 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen>
         ),
         child: Row(
           children: [
-            // زر المشاركة
-            Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue, width: 2),
-              ),
-              child: IconButton(
-                onPressed: () async {
-                  await ShareService().shareItem(
-                    itemId: widget.item['itemId'] ?? widget.item['id'] ?? '',
-                    itemName: widget.item['name'] ?? 'خدمة',
-                    providerName: widget.providerName,
-                    price: widget.item['price']?.toString(),
-                    description: widget.item['details'],
-                  );
-                },
-                icon: const Icon(Icons.share),
-                color: Colors.blue,
-                iconSize: 24,
-                tooltip: 'مشاركة الخدمة',
-              ),
-            ),
-            const SizedBox(width: 12),
             // زر المفضلة
             StreamBuilder<bool>(
               stream: FavoriteService().isFavoriteStream(

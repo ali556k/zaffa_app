@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'main_navigation_screen.dart';
 import 'photography_registration_screen.dart';
 import 'service_information_screen.dart';
+import '../register_with_otp.dart';
 
 // صفحة طلب التحويل إلى مزود خدمة
 class ProviderRequestScreen extends StatefulWidget {
@@ -242,6 +243,7 @@ class _ProviderRequestScreenState extends State<ProviderRequestScreen> {
                     await prefs.setString('user_phone', phoneController.text);
                     await prefs.setString('user_name', nameController.text);
                     await prefs.setString('account_type', 'provider');
+                    await prefs.setBool('is_logged_in', true);
 
                     // إرسال طلب مزود خدمة للمالك
                     await FirebaseFirestore.instance
@@ -333,14 +335,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // صورة الملف الشخصي (اختياري)
   XFile? _pickedImage;
 
-  // تحقق من قوة كلمة المرور
-  bool _isPasswordStrong(String password) {
-    final regex = RegExp(
-      r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#\$&*~]).{8,}$',
-    );
-    return regex.hasMatch(password);
-  }
-
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
     final XFile? image = await picker.pickImage(source: ImageSource.gallery);
@@ -383,10 +377,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    if (!_isPasswordStrong(password)) {
+    if (password.length < 6) {
       setState(() {
-        _error =
-            'كلمة المرور يجب أن تكون 8 أحرف على الأقل وتحتوي على حرف كبير وصغير ورقم ورمز.';
+        _error = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
         _isLoading = false;
       });
       return;
@@ -413,8 +406,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _isLoading = false;
     });
 
-    // إنشاء الحساب مباشرة بدون OTP
-    await _createAccountDirectly(name, phone, password, city, area);
+    // الانتقال إلى صفحة OTP للتحقق قبل إنشاء الحساب
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RegisterWithOtpPage(
+          name: name,
+          phone: phone,
+          province: city ?? '',
+          creditCard: '',
+          password: password,
+          accountType: _accountType,
+          area: area,
+          profileImagePath: _pickedImage?.path,
+        ),
+      ),
+    );
   }
 
   Future<void> _createAccountDirectly(
@@ -482,6 +490,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await prefs.setString('user_name', name);
       await prefs.setString('account_type', _accountType ?? 'customer');
       await prefs.setString('currentUserId', phone);
+      await prefs.setBool('is_logged_in', true);
 
       if (mounted) {
         setState(() {

@@ -28,6 +28,22 @@ class NotificationService {
     // حفظ توكن الجهاز
     await _saveDeviceToken();
 
+    // إنشاء قنوات الإشعارات
+    await _flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(
+          const AndroidNotificationChannel(
+            'zafa_main_channel',
+            'إشعارات زفة',
+            description: 'إشعارات الحجوزات والرسائل',
+            importance: Importance.max,
+            playSound: true,
+            enableVibration: true,
+          ),
+        );
+
     // إعداد local notifications
     const AndroidInitializationSettings androidInit =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -106,19 +122,19 @@ class NotificationService {
   // معالجة الضغط على الإشعار المحلي
   void _onLocalNotificationTap(NotificationResponse response) {
     final payload = response.payload;
-    if (payload != null) {
-      print('تم الضغط على الإشعار المحلي: $payload');
-      // يمكن تحليل البيانات والتنقل للمحادثة
-      try {
-        final parts = payload.split('|');
-        if (parts.length >= 2) {
-          final chatId = parts[0];
-          final currentUserId = parts[1];
-          _navigateToChat(chatId, currentUserId);
-        }
-      } catch (e) {
-        print('خطأ في تحليل payload: $e');
+    if (payload == null) return;
+    try {
+      final parts = payload.split('|');
+      if (parts.isEmpty) return;
+      final type = parts[0];
+      if (type == 'message' && parts.length >= 3) {
+        _navigateToChat(parts[1], parts[2]);
+      } else if ((type == 'booking_status' || type == 'new_booking') &&
+          parts.length >= 2) {
+        _navigateToMyBookings();
       }
+    } catch (e) {
+      print('خطأ في تحليل payload: $e');
     }
   }
 
@@ -126,9 +142,20 @@ class NotificationService {
   void _handleNotificationTap(RemoteMessage message) {
     final data = message.data;
     print('بيانات الإشعار: $data');
+    final type = data['type'] ?? '';
+    if (type == 'message' && data['chatId'] != null) {
+      _navigateToChat(data['chatId']!, data['currentUserId'] ?? '');
+    } else if (type == 'booking_status' || type == 'new_booking') {
+      _navigateToMyBookings();
+    }
+  }
 
-    if (data['type'] == 'message' && data['chatId'] != null) {
-      _navigateToChat(data['chatId'], data['currentUserId'] ?? '');
+  // التنقل لصفحة حجوزاتي
+  void _navigateToMyBookings() {
+    if (_appContext != null) {
+      Navigator.of(
+        _appContext!,
+      ).pushNamedAndRemoveUntil('/bookings', (route) => route.isFirst);
     }
   }
 
@@ -176,23 +203,30 @@ class NotificationService {
     final prefs = await SharedPreferences.getInstance();
     final currentUserId = prefs.getString('user_phone') ?? '';
 
-    // إنشاء payload للتنقل
+    // تحديد نوع الإشعار وبناء payload
+    final type = message.data['type'] ?? 'message';
     final chatId = message.data['chatId'] ?? '';
-    final payload = '$chatId|$currentUserId';
+    String payload;
+    if (type == 'message') {
+      payload = 'message|$chatId|$currentUserId';
+    } else {
+      final bookingId = message.data['bookingId'] ?? '';
+      payload = '$type|$bookingId';
+    }
 
     final AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
-          'zafa_messages_channel',
-          'رسائل زفة',
-          channelDescription: 'إشعارات الرسائل الجديدة في تطبيق زفة',
+          'zafa_main_channel',
+          'إشعارات زفة',
+          channelDescription: 'إشعارات الحجوزات والرسائل',
           importance: Importance.max,
           priority: Priority.high,
-          icon: '@mipmap/ic_launcher', // أيقونة تطبيق زفة
+          icon: '@mipmap/ic_launcher',
           largeIcon: const DrawableResourceAndroidBitmap('@mipmap/ic_launcher'),
           playSound: true,
           enableVibration: true,
           showWhen: true,
-          color: const Color(0xFF800000), // لون تطبيق زفة
+          color: const Color(0xFF800000),
           styleInformation: BigTextStyleInformation(
             notification.body ?? '',
             htmlFormatBigText: false,

@@ -22,15 +22,17 @@ class ProviderServiceRegistrationScreen extends StatefulWidget {
   });
 
   @override
-  State<ProviderServiceRegistrationScreen> createState() => _ProviderServiceRegistrationScreenState();
+  State<ProviderServiceRegistrationScreen> createState() =>
+      _ProviderServiceRegistrationScreenState();
 }
 
-class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegistrationScreen> {
+class _ProviderServiceRegistrationScreenState
+    extends State<ProviderServiceRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _serviceNameController = TextEditingController();
   final _creditCardController = TextEditingController();
   final _areaController = TextEditingController();
-  
+
   String? _selectedServiceType;
   File? _serviceImage;
   LatLng? _selectedLocation;
@@ -64,7 +66,9 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.'),
+              content: Text(
+                'تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.',
+              ),
               duration: Duration(seconds: 4),
             ),
           );
@@ -107,31 +111,29 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 80,
+        imageQuality: 100,
       );
-      
+
       if (image != null) {
         setState(() {
           _serviceImage = File(image.path);
         });
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطأ في اختيار الصورة: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('خطأ في اختيار الصورة: $e')));
     }
   }
 
   Future<String?> _uploadServiceImage() async {
     if (_serviceImage == null) return null;
-    
+
     try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('service_images/${widget.providerId}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      
+      final ref = FirebaseStorage.instance.ref().child(
+        'service_images/${widget.providerId}_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+
       await ref.putFile(_serviceImage!);
       return await ref.getDownloadURL();
     } catch (e) {
@@ -148,19 +150,19 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
     print('🔍 بدء _submitServiceInfo');
     print('📝 نوع الخدمة المختار: "$_selectedServiceType"');
     print('🔍 ═══════════════════════════════════════');
-    
+
     // ====== الفحص الأولي للنموذج ======
     if (!_formKey.currentState!.validate()) {
       print('❌ فشل التحقق من النموذج');
       return;
     }
-    
+
     // ====== الفحص: هل تم اختيار نوع الخدمة؟ ======
     if (_selectedServiceType == null || _selectedServiceType!.isEmpty) {
       print('❌ نوع الخدمة غير محدد');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى اختيار نوع الخدمة')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('يرجى اختيار نوع الخدمة')));
       return;
     }
 
@@ -168,16 +170,16 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
     print('🔍 ═══════════════════════════════════════');
     print('🔍 التحقق من نوع الخدمة...');
     print('   نوع الخدمة: "$_selectedServiceType"');
-    
+
     final isHallService = _selectedServiceType == 'قاعة عرس';
     print('   🎯 هل هو قاعة عرس؟ $isHallService');
-    
+
     // ====== المسار الخاص بقاعات العرس ======
     if (isHallService) {
       print('🏰 ═══════════════════════════════════════');
       print('🏰 تم اختيار قاعة عرس - مسار القاعات');
       print('🏰 ═══════════════════════════════════════');
-      
+
       // التحقق من المنطقة
       if (_areaController.text.trim().isEmpty) {
         print('❌ المنطقة فارغة');
@@ -186,7 +188,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
         );
         return;
       }
-      
+
       // التحقق من الموقع
       if (_selectedLocation == null) {
         print('❌ الموقع غير محدد');
@@ -197,7 +199,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
       }
 
       print('✅ جميع البيانات متوفرة - الانتقال للصفحة المتخصصة');
-      
+
       // عرض رسالة
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -210,9 +212,9 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (!mounted) return;
-      
+
       print('🚀 فتح HallRegistrationScreen...');
-      
+
       final result = await Navigator.push(
         context,
         MaterialPageRoute(
@@ -221,21 +223,22 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
             userName: widget.providerName,
             governorate: _areaController.text.trim(),
             area: _areaController.text.trim(),
-            location: '${_selectedLocation!.latitude},${_selectedLocation!.longitude}',
+            location:
+                '${_selectedLocation!.latitude},${_selectedLocation!.longitude}',
             serviceType: 'قاعة عرس',
           ),
         ),
       );
-      
+
       print('🔙 عودة من HallRegistrationScreen - النتيجة: $result');
 
       if (result == true && mounted) {
         print('✅ التسجيل ناجح - تحديث البيانات والانتقال للرئيسية');
-        
+
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_hall_provider', true);
         await prefs.setString('provider_type', 'hall');
-        
+
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
@@ -244,7 +247,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           (route) => false,
         );
       }
-      
+
       return; // ⚠️ مهم جداً - إيقاف التنفيذ هنا
     }
 
@@ -253,9 +256,9 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
     print('📦 خدمة عادية - المسار التقليدي');
     print('📦 ═══════════════════════════════════════');
     if (_serviceImage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('يرجى اختيار صورة للخدمة')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('يرجى اختيار صورة للخدمة')));
       return;
     }
     if (_selectedLocation == null) {
@@ -272,7 +275,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
     try {
       // رفع صورة الخدمة
       final imageUrl = await _uploadServiceImage();
-      
+
       // إنشاء بيانات الخدمة
       final serviceData = {
         'serviceName': _serviceNameController.text.trim(),
@@ -300,9 +303,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           .set(serviceData);
 
       // إرسال طلب للمالك لجميع الخدمات
-      await FirebaseFirestore.instance
-          .collection('provider_requests')
-          .add({
+      await FirebaseFirestore.instance.collection('provider_requests').add({
         ...serviceData,
         'requestType': 'new_provider',
         'submittedAt': FieldValue.serverTimestamp(),
@@ -310,10 +311,23 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
         'reviewedBy': null,
         'notes': null,
         // بيانات إضافية لقاعات الأعراس
-        'isHallProvider': (_selectedServiceType == 'قاعة عرس' || _selectedServiceType == 'قاعات اعراس'),
-        'expectedCapacity': _selectedServiceType == 'قاعة عرس' || _selectedServiceType == 'قاعات اعراس' ? '300 شخص' : null,
-        'hallFeatures': _selectedServiceType == 'قاعة عرس' || _selectedServiceType == 'قاعات اعراس' 
-            ? ['نظام صوت متطور', 'إضاءة احترافية', 'تكييف مركزي', 'مواقف سيارات'] 
+        'isHallProvider':
+            (_selectedServiceType == 'قاعة عرس' ||
+            _selectedServiceType == 'قاعات اعراس'),
+        'expectedCapacity':
+            _selectedServiceType == 'قاعة عرس' ||
+                _selectedServiceType == 'قاعات اعراس'
+            ? '300 شخص'
+            : null,
+        'hallFeatures':
+            _selectedServiceType == 'قاعة عرس' ||
+                _selectedServiceType == 'قاعات اعراس'
+            ? [
+                'نظام صوت متطور',
+                'إضاءة احترافية',
+                'تكييف مركزي',
+                'مواقف سيارات',
+              ]
             : null,
       });
 
@@ -325,18 +339,24 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
       await prefs.setString('providerName', widget.providerName);
       await prefs.setString('user_phone', widget.providerId);
       await prefs.setString('account_type', 'provider');
+      await prefs.setBool('is_logged_in', true);
 
       // حفظ الجلسة في Firestore
-      await FirebaseFirestore.instance.collection('sessions').doc(widget.providerId).set({
-        'active': true,
-        'lastLogin': FieldValue.serverTimestamp(),
-        'accountType': 'provider',
-      });
+      await FirebaseFirestore.instance
+          .collection('sessions')
+          .doc(widget.providerId)
+          .set({
+            'active': true,
+            'lastLogin': FieldValue.serverTimestamp(),
+            'accountType': 'provider',
+          });
 
       // إنشاء مزود في مجموعة providers إذا لم يكن موجوداً
-      final providerRef = FirebaseFirestore.instance.collection('providers').doc(widget.providerId);
+      final providerRef = FirebaseFirestore.instance
+          .collection('providers')
+          .doc(widget.providerId);
       final providerDoc = await providerRef.get();
-      
+
       if (!providerDoc.exists) {
         final providerData = {
           'name': widget.providerName,
@@ -383,11 +403,10 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
         ),
         (route) => false, // إزالة جميع الشاشات السابقة
       );
-      
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('حدث خطأ: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('حدث خطأ: $e')));
     } finally {
       setState(() {
         _isLoading = false;
@@ -405,10 +424,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF1E88E5),
-              Color(0xFF1976D2),
-            ],
+            colors: [Color(0xFF1E88E5), Color(0xFF1976D2)],
           ),
         ),
         child: SafeArea(
@@ -419,11 +435,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    const Icon(
-                      Icons.business,
-                      size: 80,
-                      color: Colors.white,
-                    ),
+                    const Icon(Icons.business, size: 80, color: Colors.white),
                     const SizedBox(height: 16),
                     const Text(
                       'تسجيل معلومات الخدمة',
@@ -444,7 +456,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                   ],
                 ),
               ),
-              
+
               // Form Container
               Expanded(
                 child: Container(
@@ -460,7 +472,9 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              CircularProgressIndicator(color: Color(0xFF1E88E5)),
+                              CircularProgressIndicator(
+                                color: Color(0xFF1E88E5),
+                              ),
                               SizedBox(height: 16),
                               Text('جاري حفظ معلومات الخدمة...'),
                             ],
@@ -476,7 +490,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                                 // صورة الخدمة
                                 _buildImagePicker(),
                                 const SizedBox(height: 24),
-                                
+
                                 // اسم الخدمة
                                 _buildTextField(
                                   controller: _serviceNameController,
@@ -490,11 +504,11 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                                   },
                                 ),
                                 const SizedBox(height: 20),
-                                
+
                                 // نوع الخدمة
                                 _buildServiceTypeDropdown(),
                                 const SizedBox(height: 20),
-                                
+
                                 // المنطقة
                                 _buildTextField(
                                   controller: _areaController,
@@ -508,7 +522,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                                   },
                                 ),
                                 const SizedBox(height: 20),
-                                
+
                                 // رقم بطاقة الائتمان
                                 _buildTextField(
                                   controller: _creditCardController,
@@ -526,11 +540,11 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                                   },
                                 ),
                                 const SizedBox(height: 24),
-                                
+
                                 // خريطة تحديد الموقع
                                 _buildLocationPicker(),
                                 const SizedBox(height: 32),
-                                
+
                                 // زر التالي
                                 _buildNextButton(),
                               ],
@@ -559,7 +573,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           ),
         ),
         const SizedBox(height: 12),
-        
+
         // Container محسن للصورة والزر
         Container(
           padding: const EdgeInsets.all(16),
@@ -586,14 +600,18 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                     gradient: LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: _serviceImage != null 
+                      colors: _serviceImage != null
                           ? [const Color(0xFF4CAF50), const Color(0xFF45A049)]
                           : [const Color(0xFF1E88E5), const Color(0xFF1976D2)],
                     ),
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: (_serviceImage != null ? const Color(0xFF4CAF50) : const Color(0xFF1E88E5)).withOpacity(0.3),
+                        color:
+                            (_serviceImage != null
+                                    ? const Color(0xFF4CAF50)
+                                    : const Color(0xFF1E88E5))
+                                .withOpacity(0.3),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),
@@ -603,7 +621,9 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        _serviceImage != null ? Icons.check_circle : Icons.add_photo_alternate,
+                        _serviceImage != null
+                            ? Icons.check_circle
+                            : Icons.add_photo_alternate,
                         size: 32,
                         color: Colors.white,
                       ),
@@ -621,9 +641,9 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                   ),
                 ),
               ),
-              
+
               const SizedBox(width: 16),
-              
+
               // عرض الصورة المختارة
               Expanded(
                 child: _serviceImage != null
@@ -641,10 +661,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(16),
-                          child: Image.file(
-                            _serviceImage!,
-                            fit: BoxFit.cover,
-                          ),
+                          child: Image.file(_serviceImage!, fit: BoxFit.cover),
                         ),
                       )
                     : Container(
@@ -725,7 +742,10 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
             ),
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
           ),
         ),
       ],
@@ -763,14 +783,14 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
             ),
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 16,
+            ),
           ),
           hint: const Text('اختر نوع الخدمة'),
           items: _serviceTypes.map((String type) {
-            return DropdownMenuItem<String>(
-              value: type,
-              child: Text(type),
-            );
+            return DropdownMenuItem<String>(value: type, child: Text(type));
           }).toList(),
           onChanged: (String? newValue) {
             print('📝 تم اختيار نوع الخدمة: "$newValue"');
@@ -803,7 +823,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           ),
         ),
         const SizedBox(height: 12),
-        
+
         // زر تحديد الموقع
         SizedBox(
           width: double.infinity,
@@ -811,24 +831,29 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           child: ElevatedButton.icon(
             onPressed: () => _openLocationPicker(),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _selectedLocation != null ? const Color(0xFF10B981) : const Color(0xFF1E88E5),
+              backgroundColor: _selectedLocation != null
+                  ? const Color(0xFF10B981)
+                  : const Color(0xFF1E88E5),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
               elevation: 4,
             ),
-            icon: Icon(_selectedLocation != null ? Icons.check_circle : Icons.location_on),
+            icon: Icon(
+              _selectedLocation != null
+                  ? Icons.check_circle
+                  : Icons.location_on,
+            ),
             label: Text(
-              _selectedLocation != null ? 'تم تحديد الموقع' : 'تحديد الموقع على الخريطة',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              _selectedLocation != null
+                  ? 'تم تحديد الموقع'
+                  : 'تحديد الموقع على الخريطة',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ),
         ),
-        
+
         if (_selectedLocation != null) ...[
           const SizedBox(height: 12),
           Container(
@@ -882,7 +907,8 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => LocationPickerModal(
-        initialLocation: _selectedLocation ?? const LatLng(33.3152, 44.3661), // بغداد
+        initialLocation:
+            _selectedLocation ?? const LatLng(33.3152, 44.3661), // بغداد
         onLocationSelected: (LatLng location) {
           setState(() {
             _selectedLocation = location;
@@ -915,10 +941,7 @@ class _ProviderServiceRegistrationScreenState extends State<ProviderServiceRegis
           children: [
             Text(
               'إنشاء حساب مزود الخدمة',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             SizedBox(width: 8),
             Icon(Icons.check),
@@ -1004,7 +1027,7 @@ class _LocationPickerModalState extends State<LocationPickerModal> {
               ],
             ),
           ),
-          
+
           // تعليمات
           Container(
             padding: const EdgeInsets.all(16),
@@ -1016,16 +1039,13 @@ class _LocationPickerModalState extends State<LocationPickerModal> {
                 Expanded(
                   child: Text(
                     'اضغط على المكان المطلوب على الخريطة لتحديد موقع خدمتك',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF1E88E5),
-                    ),
+                    style: TextStyle(fontSize: 14, color: Color(0xFF1E88E5)),
                   ),
                 ),
               ],
             ),
           ),
-          
+
           // الخريطة
           Expanded(
             child: GoogleMap(
@@ -1052,7 +1072,7 @@ class _LocationPickerModalState extends State<LocationPickerModal> {
                   : {},
             ),
           ),
-          
+
           // معلومات الموقع المحدد وزر التأكيد
           Container(
             padding: const EdgeInsets.all(20),
@@ -1101,9 +1121,9 @@ class _LocationPickerModalState extends State<LocationPickerModal> {
                       ],
                     ),
                   ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // زر التأكيد
                 SizedBox(
                   width: double.infinity,

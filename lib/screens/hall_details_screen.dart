@@ -8,6 +8,7 @@ import '../screens/booking_screen.dart';
 import '../utils/image_utils.dart';
 import '../widgets/image_viewer.dart';
 import '../services/favorite_service.dart';
+import '../utils/chat_helper.dart';
 
 class OrderModel {
   final String id;
@@ -86,6 +87,7 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
 
   Duration _remainingEditDuration = Duration.zero;
   Timer? _countdownTimer;
+  final Set<int> _deselectedServiceIndexes = {};
 
   @override
   bool get wantKeepAlive => true; // للحفاظ على حالة الشاشة
@@ -349,6 +351,45 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
 
                   // Location Button
                   _buildLocationButton(),
+
+                  const SizedBox(height: 16),
+
+                  // Chat Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        ChatHelper.startChatWithUser(
+                          context: context,
+                          otherUserId: widget.providerId,
+                          otherUserName: widget.providerName,
+                          otherUserRole: 'provider',
+                          serviceName: displayedHallName(),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.chat_bubble_outline,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                      label: const Text(
+                        'محادثة المزود',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1565C0),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 4,
+                      ),
+                    ),
+                  ),
 
                   const SizedBox(height: 24),
 
@@ -753,6 +794,31 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
     );
   }
 
+  bool _isFoodService(String name) {
+    final lower = name.toLowerCase();
+    return lower.contains('طعام') ||
+        lower.contains('ضيافة') ||
+        lower.contains('وليمة') ||
+        lower.contains('أكل') ||
+        lower.contains('اكل') ||
+        lower.contains('food') ||
+        lower.contains('catering');
+  }
+
+  List<dynamic> _getSelectedIncludedServices() {
+    List<dynamic> all = [];
+    if (fullProviderData['hallData'] != null) {
+      all = fullProviderData['hallData']['includedServices'] ?? [];
+    }
+    if (all.isEmpty) {
+      all = fullProviderData['includedServices'] ?? [];
+    }
+    return [
+      for (int i = 0; i < all.length; i++)
+        if (!_deselectedServiceIndexes.contains(i)) all[i],
+    ];
+  }
+
   Widget _buildIncludedServicesCard() {
     // إخفاء الخدمات الضمنية للتصوير
     if (isPhotography) {
@@ -776,6 +842,10 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
     if (includedServices.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final hasFoodService = includedServices.any(
+      (s) => _isFoodService(s['name']?.toString() ?? ''),
+    );
 
     return Card(
       elevation: 4,
@@ -822,46 +892,116 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
               ),
             ),
 
+            // رسالة توضيحية لخدمات الطعام
+            if (hasFoodService) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFF59E0B).withOpacity(0.5),
+                  ),
+                ),
+                child: Row(
+                  children: const [
+                    Icon(
+                      Icons.info_outline,
+                      color: Color(0xFFF59E0B),
+                      size: 18,
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'يمكنك إلغاء اختيار خدمات الطعام والضيافة إذا كنت لا تحتاجها عن طريق الضغط على المربع بجانب الخدمة',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 16),
 
             // عرض الخدمات الضمنية
-            ...includedServices.map((service) {
+            ...List.generate(includedServices.length, (i) {
+              final service = includedServices[i];
               String serviceName = service['name'] ?? 'خدمة غير محددة';
               double servicePrice = (service['price'] ?? 0).toDouble();
+              final isFood = _isFoodService(serviceName);
+              final isSelected = !_deselectedServiceIndexes.contains(i);
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withOpacity(0.05),
+                  color: isFood && !isSelected
+                      ? Colors.grey.withOpacity(0.05)
+                      : const Color(0xFF10B981).withOpacity(0.05),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: const Color(0xFF10B981).withOpacity(0.3),
+                    color: isFood && !isSelected
+                        ? Colors.grey.withOpacity(0.3)
+                        : const Color(0xFF10B981).withOpacity(0.3),
                     width: 1,
                   ),
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withOpacity(0.2),
-                        shape: BoxShape.circle,
+                    if (isFood)
+                      SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Checkbox(
+                          value: isSelected,
+                          activeColor: const Color(0xFF10B981),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          onChanged: (val) => setState(() {
+                            if (val == true) {
+                              _deselectedServiceIndexes.remove(i);
+                            } else {
+                              _deselectedServiceIndexes.add(i);
+                            }
+                          }),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10B981).withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.check_circle,
+                          color: Color(0xFF10B981),
+                          size: 20,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.check_circle,
-                        color: Color(0xFF10B981),
-                        size: 20,
-                      ),
-                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         serviceName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF2D3748),
+                          color: isFood && !isSelected
+                              ? Colors.grey
+                              : const Color(0xFF2D3748),
+                          decoration: isFood && !isSelected
+                              ? TextDecoration.lineThrough
+                              : null,
                         ),
                       ),
                     ),
@@ -873,11 +1013,15 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF10B981),
+                          color: isFood && !isSelected
+                              ? Colors.grey
+                              : const Color(0xFF10B981),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '${_formatPrice(servicePrice)} د.ع',
+                          isFood && !isSelected
+                              ? '-'
+                              : '${_formatPrice(servicePrice)} د.ع',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -893,39 +1037,51 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
 
             const SizedBox(height: 16),
 
-            // إجمالي سعر الخدمات الضمنية
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    const Color(0xFF10B981).withOpacity(0.2),
-                    const Color(0xFF10B981).withOpacity(0.1),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'إجمالي قيمة الخدمات الضمنية',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2D3748),
+            // إجمالي سعر الخدمات الضمنية المختارة
+            Builder(
+              builder: (context) {
+                final selectedServices = [
+                  for (int i = 0; i < includedServices.length; i++)
+                    if (!_deselectedServiceIndexes.contains(i))
+                      includedServices[i],
+                ];
+                return Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFF10B981).withOpacity(0.2),
+                        const Color(0xFF10B981).withOpacity(0.1),
+                      ],
                     ),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  Text(
-                    '${_formatPrice(_calculateTotalServicesPrice(includedServices))} د.ع',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF10B981),
-                    ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Flexible(
+                        child: Text(
+                          'إجمالي قيمة الخدمات الضمنية',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF2D3748),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${_formatPrice(_calculateTotalServicesPrice(selectedServices))} د.ع',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ],
         ),
@@ -1076,6 +1232,7 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
             'serviceType': 'hall',
             'category': 'hall',
             'price': _getBasePrice(),
+            'includedServices': _getSelectedIncludedServices(),
           },
           existingItemPrice: _getBasePrice().toString(),
           isEditMode: true,
@@ -1186,6 +1343,8 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
             const SizedBox(height: 16),
           ],
         ],
+
+        // Chat Button removed — moved above booking buttons
 
         // Favorite Button
         StreamBuilder<bool>(
@@ -1463,8 +1622,10 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
             'providerPhone': fullProviderData['phone'] ?? widget.providerId,
             'price': _getBasePrice().toString(), // استخدام السعر الصحيح
             'serviceType': 'hall',
+            'category': 'hall',
             'providerName':
                 fullProviderData['providerName'] ?? widget.providerName,
+            'includedServices': _getSelectedIncludedServices(),
           },
           orderId: orderRef.id,
         ),

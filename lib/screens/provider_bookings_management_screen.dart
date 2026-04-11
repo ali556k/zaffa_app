@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/booking_model.dart';
 import '../services/booking_service.dart';
+import 'deposit_receipt_screen.dart';
 
 /// شاشة إدارة الحجوزات لمزود الخدمة
 class ProviderBookingsManagementScreen extends StatefulWidget {
@@ -186,6 +187,26 @@ class _ProviderBookingsManagementScreenState
       statusColor = Colors.green;
       statusIcon = Icons.check_circle;
       statusText = 'مؤكد';
+    } else if (booking.status == 'awaiting_deposit') {
+      statusColor = Colors.amber[700]!;
+      statusIcon = Icons.account_balance_wallet;
+      statusText = 'بانتظار العربون';
+    } else if (booking.status == 'deposit_submitted') {
+      statusColor = Colors.blue[700]!;
+      statusIcon = Icons.pending_actions;
+      statusText = 'تم إرسال العربون';
+    } else if (booking.status == 'deposit_confirmed') {
+      statusColor = Colors.green;
+      statusIcon = Icons.verified;
+      statusText = 'تم تأكيد العربون';
+    } else if (booking.status == 'auto_cancelled') {
+      statusColor = Colors.red[700]!;
+      statusIcon = Icons.cancel_schedule_send;
+      statusText = 'ملغى تلقائياً';
+    } else if (booking.status == 'rejected') {
+      statusColor = Colors.red;
+      statusIcon = Icons.cancel;
+      statusText = 'مرفوض';
     } else if (booking.dayStatus == DayStatus.fullyBooked) {
       statusColor = Colors.red;
       statusIcon = Icons.event_busy;
@@ -320,12 +341,29 @@ class _ProviderBookingsManagementScreenState
                       ? 'معدل'
                       : booking.status == 'confirmed'
                       ? 'مؤكد'
+                      : booking.status == 'awaiting_deposit'
+                      ? 'بانتظار إرسال العربون'
+                      : booking.status == 'deposit_submitted'
+                      ? 'تم إرسال العربون'
+                      : booking.status == 'deposit_confirmed'
+                      ? 'تم تأكيد العربون'
+                      : booking.status == 'auto_cancelled'
+                      ? 'ملغى تلقائياً'
+                      : booking.status == 'rejected'
+                      ? 'مرفوض'
                       : (booking.isCancelled ? 'ملغي' : 'قيد الانتظار'),
                   iconColor: booking.status == 'modified' || booking.isModified
                       ? Colors.blue
-                      : booking.status == 'confirmed'
+                      : booking.status == 'confirmed' ||
+                            booking.status == 'deposit_confirmed'
                       ? Colors.green
-                      : booking.isCancelled
+                      : booking.status == 'awaiting_deposit'
+                      ? Colors.amber[700]!
+                      : booking.status == 'deposit_submitted'
+                      ? Colors.blue[700]!
+                      : booking.isCancelled ||
+                            booking.status == 'rejected' ||
+                            booking.status == 'auto_cancelled'
                       ? Colors.red
                       : Colors.grey,
                 ),
@@ -568,6 +606,159 @@ class _ProviderBookingsManagementScreenState
                   const SizedBox(height: 16),
                 ],
 
+                // أزرار الموافقة/الرفض للحجوزات المعلقة
+                if (!booking.isCancelled &&
+                    (booking.status == 'pending' ||
+                        booking.status == 'modified' ||
+                        booking.isModified ||
+                        booking.status == null ||
+                        booking.status.isEmpty)) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _approveBooking(booking),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.check_circle, size: 20),
+                          label: const Text(
+                            'موافقة',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _rejectBooking(booking),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          icon: const Icon(Icons.cancel, size: 20),
+                          label: const Text(
+                            'رفض',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                // تأكيد استلام العربون
+                if (booking.status == 'deposit_submitted') ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue[300]!),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.payments,
+                              color: Colors.blue[700],
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'هل تم استلام العربون؟',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[900],
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (rawData['depositDetails'] != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'آخر 5 أرقام: ${(rawData['depositDetails'] as Map)['last5Digits'] ?? '-'}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                          Text(
+                            'اسم المرسل: ${(rawData['depositDetails'] as Map)['senderName'] ?? '-'}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                          Text(
+                            'تاريخ التحويل: ${(rawData['depositDetails'] as Map)['date'] ?? '-'}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.blue[800],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () =>
+                                    _showDepositAmountDialog(booking),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.check, size: 18),
+                                label: const Text('نعم – تأكيد الاستلام'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {},
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                  side: const BorderSide(color: Colors.red),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.close, size: 18),
+                                label: const Text('لا'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
                 // أزرار الإجراءات
                 Row(
                   children: [
@@ -623,6 +814,165 @@ class _ProviderBookingsManagementScreenState
         ],
       ),
     );
+  }
+
+  /// الموافقة على الحجز (تغيير الحالة إلى awaiting_deposit)
+  Future<void> _approveBooking(BookingModel booking) async {
+    try {
+      // جلب رقم البطاقة من ملف المزود
+      String providerCreditCard = '';
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_providerId)
+            .get();
+        providerCreditCard = userDoc.data()?['creditCard']?.toString() ?? '';
+      } catch (_) {}
+
+      await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(booking.id)
+          .update({
+            'status': 'awaiting_deposit',
+            'depositAwaitingAt': FieldValue.serverTimestamp(),
+            if (providerCreditCard.isNotEmpty)
+              'providerCreditCard': providerCreditCard,
+          });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تمت الموافقة على الحجز – بانتظار إرسال العربون'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// رفض الحجز
+  Future<void> _rejectBooking(BookingModel booking) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(booking.id)
+          .update({
+            'status': 'rejected',
+            'rejectedAt': FieldValue.serverTimestamp(),
+          });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم رفض الحجز'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// حوار إدخال مبلغ العربون المستلم
+  void _showDepositAmountDialog(BookingModel booking) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'أدخل مبلغ العربون المستلم',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            hintText: 'مثال: 37500',
+            suffix: Text('د.ع'),
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final amount = double.tryParse(controller.text.trim());
+              if (amount == null || amount <= 0) return;
+              Navigator.pop(ctx);
+              await _confirmDepositReceived(booking, amount);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('تأكيد'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// تأكيد استلام العربون وفتح شاشة الإيصال
+  Future<void> _confirmDepositReceived(
+    BookingModel booking,
+    double depositAmount,
+  ) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(booking.id)
+          .update({
+            'status': 'deposit_confirmed',
+            'depositAmount': depositAmount.toString(),
+            'depositConfirmedAt': FieldValue.serverTimestamp(),
+          });
+
+      if (!mounted) return;
+
+      // جلب اسم الزبون من بيانات الحجز
+      final doc = await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(booking.id)
+          .get();
+      final data = doc.data() ?? {};
+      final customerName = data['customerName']?.toString() ?? 'الزبون';
+      final basePrice =
+          data['basePrice']?.toString() ?? data['price']?.toString() ?? '0';
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DepositReceiptScreen(
+            bookingId: booking.id!,
+            customerName: customerName,
+            basePrice: basePrice,
+            depositAmount: depositAmount,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   /// صف المعلومات

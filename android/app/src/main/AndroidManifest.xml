@@ -23,7 +23,7 @@
         <!-- مفتاح API صالح - تم تحديثه -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyAiE1Xk44wm6EiOR_Bum_FyBXgobn3Hpb8"/>
+            android:value="AIzaSyDIcsFFAxiqB2vUWmoz05oEGMIcYdjcLxU"/>
             
         <activity
             android:name=".MainActivity"

@@ -71,7 +71,9 @@ class _ServiceInformationScreenState extends State<ServiceInformationScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.'),
+              content: Text(
+                'تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.',
+              ),
               duration: Duration(seconds: 4),
             ),
           );
@@ -205,6 +207,7 @@ class _ServiceInformationScreenState extends State<ServiceInformationScreen> {
         await prefs.setString('providerName', widget.userName);
         await prefs.setString('user_phone', widget.userPhone);
         await prefs.setString('account_type', 'provider');
+        await prefs.setBool('is_logged_in', true);
 
         Navigator.pushAndRemoveUntil(
           context,
@@ -269,6 +272,7 @@ class _ServiceInformationScreenState extends State<ServiceInformationScreen> {
         await prefs.setString('providerName', widget.userName);
         await prefs.setString('user_phone', widget.userPhone);
         await prefs.setString('account_type', 'provider');
+        await prefs.setBool('is_logged_in', true);
 
         // Go to provider main screen
         Navigator.pushAndRemoveUntil(
@@ -353,6 +357,7 @@ class _ServiceInformationScreenState extends State<ServiceInformationScreen> {
       await prefs.setString('providerName', widget.userName);
       await prefs.setString('user_phone', widget.userPhone);
       await prefs.setString('account_type', 'provider');
+      await prefs.setBool('is_logged_in', true);
 
       // حفظ الجلسة في Firestore
       await FirebaseFirestore.instance
@@ -815,7 +820,9 @@ class _LocationPickerScreenState extends State<_LocationPickerScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.'),
+              content: Text(
+                'تم رفض إذن الموقع نهائياً. افتح الإعدادات وامنح الإذن يدوياً.',
+              ),
               duration: Duration(seconds: 4),
             ),
           );

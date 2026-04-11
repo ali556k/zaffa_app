@@ -44,18 +44,9 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
 
   // قائمة الخدمات الضمنية المتاحة
   final List<Map<String, dynamic>> _availableServices = [
-    {'name': ' التصوير الفوتوغرافي' , 'selected': false},
-    {'name': ' التصوير بالفيديو', 'selected': false},
+    {'name': ' التصوير', 'selected': false},
     {'name': ' الطعام والضيافة', 'selected': false},
-    {'name': ' تنسيق الورود والزينة', 'selected': false},
-    {'name': ' الموسيقى والدي جي', 'selected': false},
-    {'name': ' الإضاءة المتقدمة', 'selected': false},
-    {'name': ' التكييف والتهوية', 'selected': false},
     {'name': ' مواقف السيارات', 'selected': false},
-    {'name': ' الأمن والحراسة', 'selected': false},
-    {'name': 'واي فاي مجاني', 'selected': false},
-    {'name': 'شاشة عرض', 'selected': false},
-
   ];
 
   @override
@@ -179,11 +170,14 @@ class _HallRegistrationScreenState extends State<HallRegistrationScreen> {
       // رفع الصور أولاً
       List<String> imageUrls = await _uploadImages();
 
-      // جمع الخدمات الضمنية المختارة
+      // جمع الخدمات الضمنية المختارة مع السعر
       List<Map<String, dynamic>> selectedServices = _availableServices
           .where((service) => service['selected'] == true)
           .map(
-            (service) => {'name': service['name']},
+            (service) => {
+              'name': service['name'],
+              'price': service['price'] ?? 0,
+            },
           )
           .toList();
 

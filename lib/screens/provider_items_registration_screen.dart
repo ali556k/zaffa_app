@@ -797,11 +797,7 @@ class _AddItemScreenState extends State<AddItemScreen> {
   Future<void> _pickImages() async {
     try {
       final ImagePicker picker = ImagePicker();
-      final List<XFile> images = await picker.pickMultiImage(
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 80,
-      );
+      final List<XFile> images = await picker.pickMultiImage(imageQuality: 100);
 
       if (images.isNotEmpty) {
         setState(() {

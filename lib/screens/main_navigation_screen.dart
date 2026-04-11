@@ -13,6 +13,7 @@ import 'splash_screen.dart';
 import 'service_management_screens.dart';
 import 'provider_dashboard_screen.dart';
 import 'admin_provider_requests_screen.dart';
+import 'admin_bookings_screen.dart';
 import 'chats_list_screen.dart';
 import 'provider_bookings_screen.dart';
 
@@ -476,6 +477,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   String? _currentUserId;
   String _providerName = 'مزود الخدمة';
 
+  // ── streams للـ badges ──
+  Stream<int>? _bookingsBadgeStream;
+  Stream<int>? _chatsBadgeStream;
+  Stream<int>? _adminRequestsBadgeStream;
+
   @override
   void initState() {
     super.initState();
@@ -492,6 +498,92 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
     print(
       'Loaded currentUserId: $_currentUserId, providerName: $_providerName',
+    );
+    _initBadgeStreams();
+  }
+
+  // ── تهيئة streams للـ badges ──
+  void _initBadgeStreams() {
+    final userId = _currentUserId;
+    if (userId == null || userId.isEmpty || userId == 'guest') return;
+
+    const ownerPhone = '07721874360';
+
+    // حجوزاتي: حجوزات تنتظر الإجراء (إرسال العربون)
+    _bookingsBadgeStream = FirebaseFirestore.instance
+        .collection('bookings')
+        .where('customerId', isEqualTo: userId)
+        .where('status', isEqualTo: 'awaiting_deposit')
+        .snapshots()
+        .map((s) => s.docs.length);
+
+    // المحادثات: مجموع غير المقروء
+    _chatsBadgeStream = FirebaseFirestore.instance
+        .collection('chats')
+        .where('users', arrayContains: userId)
+        .snapshots()
+        .map((snap) {
+          int total = 0;
+          for (final doc in snap.docs) {
+            final unread = Map<String, dynamic>.from(
+              doc.data()['unreadCount'] ?? {},
+            );
+            total += (unread[userId] as num?)?.toInt() ?? 0;
+          }
+          return total;
+        });
+
+    // الملف الشخصي (للمالك فقط): طلبات مزودي الخدمة المعلقة
+    if (userId == ownerPhone) {
+      _adminRequestsBadgeStream = FirebaseFirestore.instance
+          .collection('provider_requests')
+          .where('status', isEqualTo: 'pending')
+          .snapshots()
+          .map((s) => s.docs.length);
+    }
+
+    if (mounted) setState(() {});
+  }
+
+  // ── أيقونة مع badge رقمي ──
+  Widget _badgeIcon(IconData iconData, Stream<int>? stream, Color color) {
+    if (stream == null) return Icon(iconData, color: color);
+    return StreamBuilder<int>(
+      stream: stream,
+      builder: (context, snap) {
+        final count = snap.data ?? 0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(iconData, color: color),
+            if (count > 0)
+              Positioned(
+                right: -7,
+                top: -5,
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 17,
+                    minHeight: 17,
+                  ),
+                  child: Text(
+                    count > 99 ? '99+' : '$count',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -623,25 +715,52 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                           label: 'الدعم الفني',
                         ),
                       ]
-                    : const [
-                        BottomNavigationBarItem(
+                    : [
+                        const BottomNavigationBarItem(
                           icon: Icon(Icons.home),
                           label: 'الرئيسية',
                         ),
                         BottomNavigationBarItem(
-                          icon: Icon(Icons.book),
+                          icon: _badgeIcon(
+                            Icons.book,
+                            _bookingsBadgeStream,
+                            Colors.grey.shade600,
+                          ),
+                          activeIcon: _badgeIcon(
+                            Icons.book,
+                            _bookingsBadgeStream,
+                            const Color(0xFFB46A6A),
+                          ),
                           label: 'حجوزاتي',
                         ),
                         BottomNavigationBarItem(
-                          icon: Icon(Icons.chat),
+                          icon: _badgeIcon(
+                            Icons.chat,
+                            _chatsBadgeStream,
+                            Colors.grey.shade600,
+                          ),
+                          activeIcon: _badgeIcon(
+                            Icons.chat,
+                            _chatsBadgeStream,
+                            const Color(0xFFB46A6A),
+                          ),
                           label: 'المحادثات',
                         ),
-                        BottomNavigationBarItem(
+                        const BottomNavigationBarItem(
                           icon: Icon(Icons.people_alt),
                           label: 'فزعة',
                         ),
                         BottomNavigationBarItem(
-                          icon: Icon(Icons.person),
+                          icon: _badgeIcon(
+                            Icons.person,
+                            _adminRequestsBadgeStream,
+                            Colors.grey.shade600,
+                          ),
+                          activeIcon: _badgeIcon(
+                            Icons.person,
+                            _adminRequestsBadgeStream,
+                            const Color(0xFFB46A6A),
+                          ),
                           label: 'الملف الشخصي',
                         ),
                       ],
@@ -1704,8 +1823,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 20),
 
-            // زر خاص بالمالك
+            // أزرار خاصة بالمالك
             if (phone == ownerPhone) ...[
+              // زر الحجوزات
+              ElevatedButton.icon(
+                icon: const Icon(Icons.book_online),
+                label: const Text('الحجوزات'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2B0606),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 16,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  minimumSize: const Size(double.infinity, 50),
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AdminBookingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              // زر طلبات المزودين
               ElevatedButton.icon(
                 icon: const Icon(Icons.assignment),
                 label: const Text('طلبات مزودي الخدمة المرسلة'),

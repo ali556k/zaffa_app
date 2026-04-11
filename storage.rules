@@ -1,10 +1,60 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // السماح الكامل بالقراءة والكتابة لجميع الملفات
-    // ملاحظة: التطبيق يستخدم مصادقة مخصصة وليس Firebase Auth
+
+    // صور العناصر والخدمات - قراءة عامة، كتابة للمسجلين
+    match /item_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // صور المزودين
+    match /provider_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // صور الخدمات
+    match /service_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // صور المستخدمين
+    match /user_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // صور الدردشة
+    match /chat_images/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // رفع عام للصور (للمسجلين فقط)
+    match /uploads/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    // رفض كل ما لم يُذكر
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024;
     }
   }
 }
+
