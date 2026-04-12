@@ -1279,7 +1279,7 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: _canConfirmBooking ? _confirmBooking : null,
+            onPressed: _confirmBooking,
             icon: const Icon(Icons.check_circle, color: Colors.white, size: 20),
             label: const Text(
               'تثبيت الحجز',
@@ -1290,9 +1290,7 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
               ),
             ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _canConfirmBooking
-                  ? const Color(0xFFB46A6A)
-                  : Colors.grey,
+              backgroundColor: const Color(0xFFB46A6A),
               padding: const EdgeInsets.symmetric(vertical: 18),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -1302,18 +1300,6 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
           ),
         ),
 
-        if (_isConfirmLocked)
-          Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text(
-              '🎯 لقد ثبتت الحجز وبانتظار الموافقة، يمكنك تعديل الحجز خلال 24 ساعة من تثبيت الحجز.',
-              style: const TextStyle(
-                color: Colors.orange,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-
         const SizedBox(height: 16),
 
         if (currentOrder != null) ...[
@@ -1322,26 +1308,7 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
               '⚠️ تم قبول الطلب من قبل المزود، لا يمكن تعديل أو حذف الطلب.',
               style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
             )
-          else ...[
-            Text(
-              _remainingEditDuration > Duration.zero
-                  ? 'متبقي ${_remainingEditDuration.inHours.toString().padLeft(2, '0')}:${(_remainingEditDuration.inMinutes % 60).toString().padLeft(2, '0')} ساعة للتعديل'
-                  : 'انتهى وقت التعديل',
-              style: const TextStyle(
-                color: Colors.green,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _canCurrentOrderEdit ? _editCurrentOrder : null,
-                child: const Text('تعديل الطلب'),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
+          else ...[],
         ],
 
         // Chat Button removed — moved above booking buttons
@@ -1554,17 +1521,6 @@ class _HallDetailsScreenState extends State<HallDetailsScreen>
   }
 
   void _confirmBooking() async {
-    if (!_canConfirmBooking) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'يمكن تثبيت حجز جديد بعد انتهاء مهلة 24 ساعة من آخر طلب.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
 
     // التحقق من وجود معرف فريد
     if (hallDocumentId == null) {

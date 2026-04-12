@@ -10,6 +10,7 @@ import '../models/booking_model.dart';
 import '../services/calendar_service.dart';
 import '../services/booking_service.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'main_navigation_screen.dart';
 import 'package:geolocator/geolocator.dart';
 
 class BookingScreen extends StatefulWidget {
@@ -1666,31 +1667,6 @@ class _BookingScreenState extends State<BookingScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            if (!isEditMode) ...[
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context); // إغلاق النافذة فقط
-                    // إعادة ضبط النموذج للحجز التالي
-                    _resetBookingForm();
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'حجز آخر',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
             SizedBox(
               width: double.infinity,
               child: TextButton(
@@ -1701,10 +1677,19 @@ class _BookingScreenState extends State<BookingScreen> {
                       context,
                       true,
                     ); // إرجاع نتيجة التعديل للشاشة السابقة
+                  } else {
+                    // العودة للصفحة الرئيسية
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MainNavigationScreen(),
+                      ),
+                      (route) => false,
+                    );
                   }
                 },
                 child: const Text(
-                  'العودة',
+                  'عودة',
                   style: TextStyle(fontSize: 16, color: Colors.grey),
                 ),
               ),
@@ -1894,15 +1879,15 @@ class _BookingScreenState extends State<BookingScreen> {
                               color: isAvailable ? Colors.green : Colors.red,
                             ),
                           ),
-                          if (!isAvailable) ...[                          
-                          const SizedBox(height: 4),
-                          Text(
-                            'هذا العنصر غير متوفر في الوقت الحالي. يرجى التحقق لاحقاً أو التواصل مع مزود الخدمة',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[700],
+                          if (!isAvailable) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'هذا العنصر غير متوفر في الوقت الحالي. يرجى التحقق لاحقاً أو التواصل مع مزود الخدمة',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[700],
+                              ),
                             ),
-                          ),
                           ],
                         ],
                       ),
@@ -1913,9 +1898,11 @@ class _BookingScreenState extends State<BookingScreen> {
               const SizedBox(height: 20),
 
               if (isAvailable) ...[
-                // حقل التوصيل إلى
-                _buildDeliveryCard(),
-                const SizedBox(height: 20),
+                // حقل التوصيل إلى (للخدمات غير القابلة للحجز بالتقويم فقط)
+                if (!_isBookableService) ...[
+                  _buildDeliveryCard(),
+                  const SizedBox(height: 20),
+                ],
 
                 // حقل تفاصيل الحجز
                 _buildBookingDetailsCard(),
@@ -3179,7 +3166,7 @@ class _BookingScreenState extends State<BookingScreen> {
       warnings.add('⚠️ يرجى اختيار وقت النهاية');
     }
     if (isDateTimeConflict) warnings.add('⚠️ يوجد تضارب في التاريخ/الوقت');
-    if (_deliveryAddressController.text.trim().isEmpty) {
+    if (!_isBookableService && _deliveryAddressController.text.trim().isEmpty) {
       canBook = false;
       warnings.add('⚠️ يرجى إدخال عنوان التوصيل');
     }

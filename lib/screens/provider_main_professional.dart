@@ -1732,7 +1732,6 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
       'car_decoration', // تزيين سيارة
       'cake', // كيك
       'flowers', // ورود
-      'honeymoon', // شهر عسل
     ];
 
     final nonBookableServiceTypes = [
@@ -1742,7 +1741,6 @@ class _ProviderMainProfessionalState extends State<ProviderMainProfessional>
       'تزيين سيارة',
       'كيك',
       'ورود',
-      'شهر عسل',
     ];
 
     return nonBookableCategories.contains(category) ||

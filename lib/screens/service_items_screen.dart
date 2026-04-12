@@ -413,6 +413,7 @@ class _ServiceItemsScreenState extends State<ServiceItemsScreen> {
                                             .providerId, // سيكون نفس providerId لأنه رقم الهاتف
                                         'price': item.price,
                                         'serviceType': widget.serviceId,
+                                        'category': widget.serviceId,
                                       },
                                     ),
                                   ),
@@ -476,6 +477,7 @@ class _ServiceItemsScreenState extends State<ServiceItemsScreen> {
                                   'price': item.price,
                                   'imageUrl': item.imageUrl,
                                   'serviceType': widget.serviceId,
+                                  'category': widget.serviceId,
                                 },
                               ),
                             ),
