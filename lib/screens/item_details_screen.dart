@@ -665,6 +665,7 @@ class _ItemDetailsScreenState extends State<ItemDetailsScreen>
       'providerId': widget.item['providerId'] ?? '',
       'providerName': widget.providerName,
       'serviceType': normalizedServiceType,
+      'category': widget.item['category'] ?? '',
       'description': widget.item['description'] ?? '',
       'imageUrl': widget.item['imageUrl'] ?? widget.item['images']?[0] ?? '',
     };
